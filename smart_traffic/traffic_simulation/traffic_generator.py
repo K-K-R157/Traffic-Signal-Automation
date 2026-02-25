@@ -1,34 +1,53 @@
+"""
+Traffic Generator Module — Time-based vehicle spawning
+
+Instead of a per-frame probability (which spawns far too many vehicles at
+60 fps), this generator uses wall-clock intervals of 2–4 seconds.
+"""
+
+import time
 import random
 from .vehicle import Vehicle
 import config
 
+
 class TrafficGenerator:
-    
+    """Time-based traffic generator for each approach lane."""
+
+    SIDES = ("NORTH", "SOUTH", "EAST", "WEST")
+
     def __init__(self):
-        """Initialize traffic generator"""
-        self.spawn_rate = config.VEHICLE_SPAWN_RATE
-        self.max_vehicles = config.MAX_VEHICLES_PER_SIDE
-        self.vehicle_types = list(config.VEHICLE_PROBABILITIES.keys())
-        self.probabilities = list(config.VEHICLE_PROBABILITIES.values())
-    
-    def should_generate_vehicle(self):
-        return random.random() < self.spawn_rate
-    
-    def choose_vehicle_type(self):
-        return random.choices(self.vehicle_types, weights=self.probabilities)[0]
-    
-    def generate_vehicle(self, side, current_vehicle_count):
-        # Don't generate if too many vehicles already
-        if current_vehicle_count >= self.max_vehicles:
+        self.vehicle_types  = list(config.VEHICLE_PROBABILITIES.keys())
+        self.probabilities  = list(config.VEHICLE_PROBABILITIES.values())
+        self.max_vehicles   = config.MAX_VEHICLES_PER_SIDE
+
+        # per-side cooldown timers
+        now = time.time()
+        self._last_spawn = {s: now for s in self.SIDES}
+        self._next_interval = {
+            s: random.uniform(config.SPAWN_INTERVAL_MIN, config.SPAWN_INTERVAL_MAX)
+            for s in self.SIDES
+        }
+
+    # ------------------------------------------------------------------ #
+    def generate_vehicle(self, side: str, current_count: int):
+        """
+        Return a new Vehicle for *side* if the cooldown has elapsed and
+        the queue isn't full.  Otherwise return None.
+        """
+        if current_count >= self.max_vehicles:
             return None
-        
-        # Random chance to generate
-        if not self.should_generate_vehicle():
+
+        now = time.time()
+        elapsed = now - self._last_spawn[side]
+        if elapsed < self._next_interval[side]:
             return None
-        
-        # Choose vehicle type
-        vehicle_type = self.choose_vehicle_type()
-        
-        # Create vehicle at back of queue
-        vehicle = Vehicle(side, current_vehicle_count, vehicle_type)
-        return vehicle
+
+        # Reset timer with a fresh random interval
+        self._last_spawn[side] = now
+        self._next_interval[side] = random.uniform(
+            config.SPAWN_INTERVAL_MIN, config.SPAWN_INTERVAL_MAX
+        )
+
+        vtype = random.choices(self.vehicle_types, weights=self.probabilities)[0]
+        return Vehicle(side, vtype, queue_position=current_count)

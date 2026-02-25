@@ -1,226 +1,251 @@
-import config
+"""
+Vehicle Module — Waypoint-based path movement
+
+Each vehicle follows a pre-computed list of (x, y) waypoints that
+define its complete route from spawn → stop-line → intersection → exit.
+Bézier curves are used for smooth turns into the correct exit lane.
+
+Lane System (Left-Hand Traffic / India, top-down view):
+  NORTH vehicles (heading south ↓): x = center + offset  (right half)
+  SOUTH vehicles (heading north ↑): x = center − offset  (left half)
+  EAST  vehicles (heading west  ←): y = center + offset  (bottom half)
+  WEST  vehicles (heading east  →): y = center − offset  (top half)
+"""
+
+import math
 import random
+import config
+
 
 class Vehicle:
-    # Class variable to track used license plates
-    _used_plates = set()
-    
+    """Single vehicle with waypoint-based movement."""
+
+    _used_plates: set = set()
+
+    # ------------------------------------------------------------------ #
+    #  License-plate generator (Indian format, eg UP27M1234)
+    # ------------------------------------------------------------------ #
     @staticmethod
-    def generate_license_plate():
+    def generate_license_plate() -> str:
         while True:
-            state = random.choice(config.LICENSE_PLATE_STATES)
+            state    = random.choice(config.LICENSE_PLATE_STATES)
             district = random.randint(10, 99)
-            letter = random.choice(config.LICENSE_PLATE_LETTERS)
-            number = random.randint(1000, 9999)
-            plate = f"{state}{district}{letter}{number}"
-            
+            letter   = random.choice(config.LICENSE_PLATE_LETTERS)
+            number   = random.randint(1000, 9999)
+            plate    = f"{state}{district}{letter}{number}"
             if plate not in Vehicle._used_plates:
                 Vehicle._used_plates.add(plate)
                 return plate
-    
-    def __init__(self, side, position, vehicle_type):
-        self.side = side
-        self.position = position
-        self.vehicle_type = vehicle_type
-        self.vehicle_id = Vehicle.generate_license_plate()
-        
-        self.x = 0
-        self.y = 0
-        self.speed = config.VEHICLE_SPEED
-        self.crossed = False
-        self.crossed_signal = False  # Has vehicle crossed the signal line?
-        
-        # Get size based on vehicle type
-        self.width, self.height = config.VEHICLE_SIZES.get(vehicle_type, (60, 35))
-        self.color = config.VEHICLE_COLORS.get(vehicle_type, (100, 100, 100))
-        
-        # Random direction: 0=straight, 1=left, 2=right
-        self.turn_direction = random.choice([0, 0, 0, 1, 2])  # 60% straight, 20% left, 20% right
-        self.is_turning = False
-        self.original_side = side
-        
-        # Calculate initial position
-        self._calculate_initial_position()
-    
-    def _calculate_initial_position(self, window_size=(1920, 1080)):
-        center_x = window_size[0] // 2
-        center_y = window_size[1] // 2
-        spacing = 60  # Space between vehicles
-        
-        if self.side == "NORTH":
-            self.x = center_x - 80
-            self.y = center_y - 300 - (self.position * spacing)
-            
-        elif self.side == "SOUTH":
-            self.x = center_x + 80
-            self.y = center_y + 300 + (self.position * spacing)
-            
-        elif self.side == "EAST":
-            self.x = center_x + 300 + (self.position * spacing)
-            self.y = center_y + 80
-            
-        elif self.side == "WEST":
-            self.x = center_x - 300 - (self.position * spacing)
-            self.y = center_y - 80
-    
-    def update_position_for_screen(self, window_size):
-        self._calculate_initial_position(window_size)
-    
-    def move(self, window_size=(1920, 1080)):
-        if self.crossed:
+
+    # ------------------------------------------------------------------ #
+    #  Constructor
+    # ------------------------------------------------------------------ #
+    def __init__(self, original_side: str, vehicle_type: str, queue_position: int = 0):
+        self.original_side  = original_side
+        self.vehicle_type   = vehicle_type
+        self.vehicle_id     = Vehicle.generate_license_plate()
+
+        self.speed   = config.VEHICLE_SPEED
+        self.crossed = False          # left the screen
+        self.stopped = False          # temporarily halted (red / queue)
+
+        # display dimensions
+        self.width, self.length = config.VEHICLE_DISPLAY_SIZES.get(
+            vehicle_type, (35, 55)
+        )
+
+        # turn: 0 = straight, 1 = left, 2 = right
+        self.turn_direction = random.choices(
+            [0, 1, 2], weights=[60, 20, 20]
+        )[0]
+
+        # float position & heading
+        self.x     = 0.0
+        self.y     = 0.0
+        self.angle = 0.0             # degrees (from atan2)
+
+        # waypoint path
+        self.waypoints: list = []
+        self.wp_index: int   = 0
+        self.queue_position  = queue_position
+        self._path_ready     = False
+
+    # ------------------------------------------------------------------ #
+    #  Path setup  (call once when screen size is known)
+    # ------------------------------------------------------------------ #
+    def setup_path(self, cx: int, cy: int, screen_w: int, screen_h: int):
+        if self._path_ready:
             return
-        
-        # Check if at intersection center for turning
-        center_x = window_size[0] // 2
-        center_y = window_size[1] // 2
-        
-        # Check if vehicle should start turning
-        if not self.is_turning and self._at_intersection_center(center_x, center_y):
-            self.is_turning = True
-            self._execute_turn()
-        
-        # Move in current direction
-        if self.side == "NORTH":
-            self.y += self.speed
-        elif self.side == "SOUTH":
-            self.y -= self.speed
-        elif self.side == "EAST":
-            self.x -= self.speed
-        elif self.side == "WEST":
-            self.x += self.speed
-        
-        # Check if vehicle has crossed intersection
-        self._check_if_crossed(window_size)
-        
-        # Update crossed_signal status
-        self._check_if_crossed_signal(window_size)
-    
-    def _at_intersection_center(self, center_x, center_y):
-        """Check if vehicle is at intersection center"""
-        threshold = 30
-        
-        if self.original_side == "NORTH" and abs(self.y - center_y) < threshold:
-            return True
-        elif self.original_side == "SOUTH" and abs(self.y - center_y) < threshold:
-            return True
-        elif self.original_side == "EAST" and abs(self.x - center_x) < threshold:
-            return True
-        elif self.original_side == "WEST" and abs(self.x - center_x) < threshold:
-            return True
-        return False
-    
-    def _execute_turn(self):
-        """Execute the turn by changing side/direction"""
+        self._path_ready = True
+
+        lo      = config.LANE_OFFSET
+        # Spawn just off-screen: use half the relevant screen dimension + buffer
+        if self.original_side in ("NORTH", "SOUTH"):
+            base_spawn = cy + 60          # off-screen vertically
+        else:
+            base_spawn = cx + 60          # off-screen horizontally
+        spawn_d = base_spawn + self.queue_position * config.MIN_FOLLOWING_DISTANCE
+        edge    = max(screen_w, screen_h) + 300
+
+        self.waypoints = self._build_path(cx, cy, lo, spawn_d, edge)
+
+        if self.waypoints:
+            self.x, self.y = self.waypoints[0]
+            self.wp_index = 1
+            self._refresh_angle()
+
+    # ------------------------------------------------------------------ #
+    #  Turn direction helpers
+    # ------------------------------------------------------------------ #
+    def _exit_direction(self):
+        """Return the side-label the vehicle will be 'from' after any turn."""
         if self.turn_direction == 0:
-            # Go straight - no change
-            pass
-        elif self.turn_direction == 1:
-            # Turn left
-            if self.side == "NORTH":
-                self.side = "WEST"
-            elif self.side == "WEST":
-                self.side = "SOUTH"
-            elif self.side == "SOUTH":
-                self.side = "EAST"
-            elif self.side == "EAST":
-                self.side = "NORTH"
-        elif self.turn_direction == 2:
-            # Turn right
-            if self.side == "NORTH":
-                self.side = "EAST"
-            elif self.side == "EAST":
-                self.side = "SOUTH"
-            elif self.side == "SOUTH":
-                self.side = "WEST"
-            elif self.side == "WEST":
-                self.side = "NORTH"
-    
-    def _check_if_crossed(self, window_size=(1920, 1080)):
-        """Check if vehicle has completely crossed the intersection"""
-        center_x = window_size[0] // 2
-        center_y = window_size[1] // 2
-        crossing_distance = 400
-        
-        if self.side == "NORTH" and self.y > center_y + crossing_distance:
-            self.crossed = True
-        elif self.side == "SOUTH" and self.y < center_y - crossing_distance:
-            self.crossed = True
-        elif self.side == "EAST" and self.x < center_x - crossing_distance:
-            self.crossed = True
-        elif self.side == "WEST" and self.x > center_x + crossing_distance:
-            self.crossed = True
-    
-    def _check_if_crossed_signal(self, window_size=(1920, 1080)):
-        """Check if vehicle has crossed the signal line"""
-        if self.crossed_signal:
+            return self.original_side
+
+        right = {"NORTH": "EAST",  "SOUTH": "WEST",  "EAST": "SOUTH", "WEST": "NORTH"}
+        left  = {"NORTH": "WEST",  "SOUTH": "EAST",  "EAST": "NORTH", "WEST": "SOUTH"}
+        return right[self.original_side] if self.turn_direction == 2 else left[self.original_side]
+
+    # -- quadratic Bézier ---------------------------------------------- #
+    @staticmethod
+    def _bezier(p0, p1, p2, n=6):
+        """n points along a quadratic Bézier (excludes p0)."""
+        pts = []
+        for i in range(1, n + 1):
+            t = i / n
+            x = (1-t)**2 * p0[0] + 2*(1-t)*t * p1[0] + t**2 * p2[0]
+            y = (1-t)**2 * p0[1] + 2*(1-t)*t * p1[1] + t**2 * p2[1]
+            pts.append((x, y))
+        return pts
+
+    # ------------------------------------------------------------------ #
+    #  Path builder
+    # ------------------------------------------------------------------ #
+    def _build_path(self, cx, cy, lo, spawn_d, edge):
+        # spawn positions  (Left-Hand Traffic: keep LEFT from driver POV)
+        spawns = {
+            "NORTH": (cx + lo, cy - spawn_d),
+            "SOUTH": (cx - lo, cy + spawn_d),
+            "EAST":  (cx + spawn_d, cy + lo),
+            "WEST":  (cx - spawn_d, cy - lo),
+        }
+        wp = [spawns[self.original_side]]
+
+        # ---- straight ------------------------------------------------ #
+        if self.turn_direction == 0:
+            exits = {
+                "NORTH": (cx + lo,   cy + edge),
+                "SOUTH": (cx - lo,   cy - edge),
+                "EAST":  (cx - edge, cy + lo),
+                "WEST":  (cx + edge, cy - lo),
+            }
+            wp.append(exits[self.original_side])
+            return wp
+
+        # ---- right turn (wide turn in LHT) -------------------------- #
+        if self.turn_direction == 2:
+            curves = {
+                "NORTH": ((cx + lo,      cy + lo - 15),
+                          (cx + lo,      cy + lo),
+                          (cx + lo - 15, cy + lo)),
+                "SOUTH": ((cx - lo,      cy - lo + 15),
+                          (cx - lo,      cy - lo),
+                          (cx - lo + 15, cy - lo)),
+                "EAST":  ((cx - lo + 15, cy + lo),
+                          (cx - lo,      cy + lo),
+                          (cx - lo,      cy + lo - 15)),
+                "WEST":  ((cx + lo - 15, cy - lo),
+                          (cx + lo,      cy - lo),
+                          (cx + lo,      cy - lo + 15)),
+            }
+            exit_pts = {
+                "NORTH": (cx - edge, cy + lo),
+                "SOUTH": (cx + edge, cy - lo),
+                "EAST":  (cx - lo,   cy - edge),
+                "WEST":  (cx + lo,   cy + edge),
+            }
+            p0, p1, p2 = curves[self.original_side]
+            wp.extend(self._bezier(p0, p1, p2))
+            wp.append(exit_pts[self.original_side])
+            return wp
+
+        # ---- left turn (short turn in LHT) -------------------------- #
+        curves = {
+            "NORTH": ((cx + lo,       cy - lo + 15),
+                      (cx + lo,       cy - lo),
+                      (cx + lo + 15,  cy - lo)),
+            "SOUTH": ((cx - lo,       cy + lo - 15),
+                      (cx - lo,       cy + lo),
+                      (cx - lo - 15,  cy + lo)),
+            "EAST":  ((cx + lo + 15,  cy + lo),
+                      (cx + lo,       cy + lo),
+                      (cx + lo,       cy + lo + 15)),
+            "WEST":  ((cx - lo - 15,  cy - lo),
+                      (cx - lo,       cy - lo),
+                      (cx - lo,       cy - lo - 15)),
+        }
+        exit_pts = {
+            "NORTH": (cx + edge, cy - lo),
+            "SOUTH": (cx - edge, cy + lo),
+            "EAST":  (cx + lo,   cy + edge),
+            "WEST":  (cx - lo,   cy - edge),
+        }
+        p0, p1, p2 = curves[self.original_side]
+        wp.extend(self._bezier(p0, p1, p2))
+        wp.append(exit_pts[self.original_side])
+        return wp
+
+    # ------------------------------------------------------------------ #
+    #  Movement
+    # ------------------------------------------------------------------ #
+    def move(self):
+        """Advance one step along the waypoint path."""
+        if self.crossed or self.stopped:
             return
-        
-        center_x = window_size[0] // 2
-        center_y = window_size[1] // 2
-        stop_distance = 150
-        
-        # Once vehicle crosses signal line, mark it
-        if self.original_side == "NORTH" and self.y > center_y - stop_distance:
-            self.crossed_signal = True
-        elif self.original_side == "SOUTH" and self.y < center_y + stop_distance:
-            self.crossed_signal = True
-        elif self.original_side == "EAST" and self.x < center_x + stop_distance:
-            self.crossed_signal = True
-        elif self.original_side == "WEST" and self.x > center_x - stop_distance:
-            self.crossed_signal = True
-    
-    def should_stop(self, signal_is_red, vehicles_ahead, window_size=(1920, 1080)):
-        """
-        Determine if vehicle should stop at signal or behind another vehicle
-        
-        Args:
-            signal_is_red (bool): Is the signal red for this side?
-            vehicles_ahead (list): List of vehicles ahead in same lane
-            window_size (tuple): Current window size
-            
-        Returns:
-            bool: Should vehicle stop?
-        """
-        # If already crossed signal line, don't stop for signal
-        if self.crossed_signal:
-            return False
-        
-        # Check if need to stop behind another vehicle
-        if vehicles_ahead:
-            min_distance = 50  # Minimum distance to maintain
-            for other_vehicle in vehicles_ahead:
-                distance = self._calculate_distance_to(other_vehicle)
-                if distance < min_distance:
-                    return True
-        
-        # Check signal only if haven't crossed signal line yet
-        if not signal_is_red:
-            return False
-        
-        # Check if vehicle is approaching the stop line
-        center_x = window_size[0] // 2
-        center_y = window_size[1] // 2
-        stop_distance = 150
-        
-        if self.original_side == "NORTH" and self.y >= center_y - stop_distance - 10:
-            return True
-        elif self.original_side == "SOUTH" and self.y <= center_y + stop_distance + 10:
-            return True
-        elif self.original_side == "EAST" and self.x <= center_x + stop_distance + 10:
-            return True
-        elif self.original_side == "WEST" and self.x >= center_x - stop_distance - 10:
-            return True
-        
-        return False
-    
-    def _calculate_distance_to(self, other_vehicle):
-        """Calculate distance to another vehicle in same direction"""
-        if self.original_side == "NORTH":
-            return other_vehicle.y - self.y
-        elif self.original_side == "SOUTH":
-            return self.y - other_vehicle.y
-        elif self.original_side == "EAST":
-            return self.x - other_vehicle.x
-        elif self.original_side == "WEST":
-            return other_vehicle.x - self.x
+        if self.wp_index >= len(self.waypoints):
+            self.crossed = True
+            return
+
+        tx, ty = self.waypoints[self.wp_index]
+        dx, dy = tx - self.x, ty - self.y
+        dist = math.hypot(dx, dy)
+
+        if dist < self.speed * 1.5:
+            self.x, self.y = tx, ty
+            self.wp_index += 1
+            self._refresh_angle()
+        else:
+            self.x += self.speed * dx / dist
+            self.y += self.speed * dy / dist
+            self._refresh_angle()
+
+    def _refresh_angle(self):
+        if self.wp_index >= len(self.waypoints):
+            return
+        tx, ty = self.waypoints[self.wp_index]
+        dx, dy = tx - self.x, ty - self.y
+        if abs(dx) > 0.01 or abs(dy) > 0.01:
+            self.angle = math.degrees(math.atan2(dy, dx))
+
+    # ------------------------------------------------------------------ #
+    #  Queue / stop-line helpers
+    # ------------------------------------------------------------------ #
+    def get_distance_from_stop_line(self, cx, cy):
+        """Positive → still approaching.  Negative → already past."""
+        sl = config.STOP_LINE_OFFSET
+        if   self.original_side == "NORTH": return (cy - sl) - self.y
+        elif self.original_side == "SOUTH": return self.y - (cy + sl)
+        elif self.original_side == "EAST":  return self.x - (cx + sl)
+        elif self.original_side == "WEST":  return (cx - sl) - self.x
+        return 0
+
+    def has_passed_stop_line(self, cx, cy):
+        return self.get_distance_from_stop_line(cx, cy) < 0
+
+    def distance_to_vehicle_ahead(self, other):
+        """Signed gap to *other* on the same approach lane (positive = ahead)."""
+        if   self.original_side == "NORTH": return other.y - self.y
+        elif self.original_side == "SOUTH": return self.y - other.y
+        elif self.original_side == "EAST":  return self.x - other.x
+        elif self.original_side == "WEST":  return other.x - self.x
         return 999

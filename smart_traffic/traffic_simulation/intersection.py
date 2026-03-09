@@ -8,10 +8,12 @@ Key responsibilities:
     and *through* (already past the stop-line).
   • Queued vehicles maintain MIN_FOLLOWING_DISTANCE and obey signals.
   • Through vehicles always keep moving.
+  • Emergency vehicle detection via EmergencyHandler.
 """
 
 import config
 from .traffic_generator import TrafficGenerator
+from emergency import EmergencyHandler
 
 
 class Intersection:
@@ -22,6 +24,7 @@ class Intersection:
     def __init__(self, signal_controller):
         self.signal_controller = signal_controller
         self.traffic_generator = TrafficGenerator()
+        self.emergency_handler = EmergencyHandler(signal_controller)
 
         self.vehicles = {s: [] for s in self.SIDES}
         self.window_size = (1920, 1080)
@@ -55,6 +58,9 @@ class Intersection:
         cx = self.window_size[0] // 2
         cy = self.window_size[1] // 2
 
+        # Emergency vehicle detection
+        self.emergency_handler.check_for_emergency(self.vehicles, cx, cy)
+
         for side in self.SIDES:
             self._update_side(side, cx, cy)
 
@@ -85,8 +91,8 @@ class Intersection:
 
         # Determine whether queued vehicles on this side should be held.
         # • GREEN  → move (after the short start-delay)
-        # • YELLOW on the *current* (outgoing) side → still moving
-        # • YELLOW on the *next* (get-ready) side   → hold
+        # • YELLOW and this side is the "outgoing" (pass) side → still moving
+        # • YELLOW but this side is the "get-ready" side     → hold
         # • RED    → hold
         signal_state = self.signal_controller.get_signal_state(side)
         from traffic_signal.signal_state import SignalState
@@ -95,7 +101,8 @@ class Intersection:
             green_elapsed = self.signal_controller.get_green_elapsed(side)
             hold_queue = (green_elapsed >= 0
                           and green_elapsed < config.GREEN_START_DELAY)
-        elif signal_state == SignalState.YELLOW and self.signal_controller.current_side == side:
+        elif (signal_state == SignalState.YELLOW
+              and self.signal_controller.yellow_pass_side == side):
             # Outgoing yellow — this lane was just green, let traffic pass
             hold_queue = False
         else:

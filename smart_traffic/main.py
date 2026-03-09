@@ -23,6 +23,7 @@ def main():
     print("  ✓ Smooth waypoint-based movement")
     print("  ✓ Correct lane positioning for turns")
     print("  ✓ Sequential traffic signals")
+    print("  ✓ Emergency vehicle preemption (ambulance priority)")
     print("\nControls:")
     print("  - ESC or Q: Exit simulation")
     print("  - F: Toggle fullscreen/windowed mode")

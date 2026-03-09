@@ -14,8 +14,8 @@ PHOTO_DIR = os.path.join(BASE_DIR, 'photo')
 # ========================
 # Signal Timing (seconds)
 # ========================
-GREEN_LIGHT_DURATION = 10
-YELLOW_LIGHT_DURATION = 3
+GREEN_LIGHT_DURATION = 15
+YELLOW_LIGHT_DURATION = 4
 
 # ========================
 # Traffic Generation
@@ -108,3 +108,8 @@ SPAWN_DISTANCE = 550                # Distance from center to spawn point (near 
 # Vehicle Spacing
 # ========================
 MIN_FOLLOWING_DISTANCE = 70         # Minimum gap between vehicles in queue
+
+# ========================
+# Emergency Vehicle Settings
+# ========================
+EMERGENCY_DETECTION_DISTANCE = 350  # Pixels before stop-line to trigger preemption

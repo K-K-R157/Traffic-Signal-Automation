@@ -118,6 +118,7 @@ class TrafficDisplay:
         self._draw_vehicles(intersection.get_all_vehicles())
         self._draw_statistics(intersection)
         self._draw_controls()
+        self._draw_emergency_indicator(intersection)
 
         pygame.display.flip()
         self.clock.tick(config.FPS)
@@ -336,6 +337,44 @@ class TrafficDisplay:
         lbl = self.font_small.render(txt, True, config.COLOR_TEXT)
         self.screen.blit(lbl, (self.width // 2 - lbl.get_width() // 2,
                                self.height - 40))
+
+    # ------------------------------------------------------------------ #
+    #  Emergency indicator
+    # ------------------------------------------------------------------ #
+    def _draw_emergency_indicator(self, intersection):
+        """Show a flashing EMERGENCY banner in the top-right corner."""
+        eh = intersection.emergency_handler
+        if not eh.active:
+            return
+
+        # Flashing effect (toggle every ~0.4 sec)
+        import time
+        show = int(time.time() * 2.5) % 2 == 0
+        if not show:
+            return
+
+        banner_w, banner_h = 420, 45
+        bx = self.width - banner_w - 20   # 20 px margin from right edge
+        by = 20                            # top margin
+        bg = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
+        bg.fill((200, 0, 0, 220))
+        self.screen.blit(bg, (bx, by))
+
+        side = eh.emergency_side or "?"
+        txt = self.font_medium.render(
+            f"EMERGENCY  —  Ambulance on {side}", True, (255, 255, 255)
+        )
+        self.screen.blit(txt, (bx + banner_w // 2 - txt.get_width() // 2,
+                               by + banner_h // 2 - txt.get_height() // 2))
+
+        # Show queued count if more than one waiting
+        qlen = len(eh._queue)
+        if qlen > 0:
+            q_txt = self.font_small.render(
+                f"+{qlen} more in queue", True, (255, 200, 200)
+            )
+            self.screen.blit(q_txt, (bx + banner_w // 2 - q_txt.get_width() // 2,
+                                     by + banner_h + 4))
 
     # ------------------------------------------------------------------ #
     #  Events

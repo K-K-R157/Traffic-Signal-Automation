@@ -227,14 +227,17 @@ class TrafficDisplay:
 
             # countdown timer (outside the road, never overlaps vehicles)
             remaining = sc.get_remaining_time()
-            # Show timer for the active side AND for the next side
-            # during the "get-ready" yellow phase
+            # Normal cycle: show timer for active side and next-side yellow.
+            # Emergency transition: show timer for any side that is yellow.
             next_idx  = (sc.current_side_index + 1) % len(sc.sides)
             next_side = sc.sides[next_idx]
-            show_timer = (sc.current_side == side or
-                          (next_side == side
-                           and state == SignalState.YELLOW
-                           and sc.get_signal_state(sc.current_side) == SignalState.YELLOW))
+            if sc.emergency_mode and state == SignalState.YELLOW:
+                show_timer = True
+            else:
+                show_timer = (sc.current_side == side or
+                              (next_side == side
+                               and state == SignalState.YELLOW
+                               and sc.get_signal_state(sc.current_side) == SignalState.YELLOW))
             if show_timer and remaining > 0:
                 tp = timer_positions[side]
                 txt = self.font_medium.render(f"{int(remaining)}s", True,

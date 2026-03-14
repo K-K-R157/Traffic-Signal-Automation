@@ -3,8 +3,7 @@ Main Entry Point
 Run this file to start the traffic simulation
 """
 
-from traffic_signal import SignalController
-from traffic_simulation import Intersection
+from smart_traffic_system import SmartSignalController, SmartIntersection
 from visualization import TrafficDisplay
 
 def main():
@@ -22,7 +21,7 @@ def main():
     print("  ✓ Real vehicle photo images")
     print("  ✓ Smooth waypoint-based movement")
     print("  ✓ Correct lane positioning for turns")
-    print("  ✓ Sequential traffic signals")
+    print("  ✓ Adaptive smart signals (max 15s per side)")
     print("  ✓ Emergency vehicle preemption (ambulance priority)")
     print("\nControls:")
     print("  - ESC or Q: Exit simulation")
@@ -30,8 +29,8 @@ def main():
     print("\nStarting...\n")
     
     # Initialize components
-    signal_controller = SignalController()
-    intersection = Intersection(signal_controller)
+    signal_controller = SmartSignalController()
+    intersection = SmartIntersection(signal_controller)
     display = TrafficDisplay()
     
     # Main simulation loop

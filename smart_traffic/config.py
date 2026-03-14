@@ -113,3 +113,17 @@ MIN_FOLLOWING_DISTANCE = 70         # Minimum gap between vehicles in queue
 # Emergency Vehicle Settings
 # ========================
 EMERGENCY_DETECTION_DISTANCE = 350  # Pixels before stop-line to trigger preemption
+
+# ========================
+# Traffic Violation Settings
+# ========================
+SIDE_LANE_VIOLATION_RATE = 0.02     # 1 in 50 vehicles (cars/trucks only)
+
+# ========================
+# MySQL Settings (Traffic Violations)
+# ========================
+DB_HOST = "localhost"
+DB_PORT = 3306
+DB_NAME = "smart_traffic_db"
+DB_USER = "root"
+DB_PASSWORD = "Gajendra_8700"

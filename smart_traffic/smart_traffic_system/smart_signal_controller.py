@@ -1,40 +1,43 @@
 """
-Signal Controller Module
-Controls traffic signal timing and state changes for all sides.
+Smart Signal Controller Module
 
-Supports two modes:
-  • Normal cycling:  NORTH → EAST → SOUTH → WEST (clockwise)
-  • Emergency preemption: smooth transition to give one side green,
-    then smooth transition back to the interrupted cycle.
+Adaptive version of the normal sequential controller:
+- Maximum green per side is GREEN_LIGHT_DURATION
+- If the current side has no queued vehicles, it may switch early
+  (yellow transition happens immediately).
+
+Emergency preemption behavior is identical to the normal system.
 """
 
 import time
-from .signal_state import SignalState
+from traffic_signal.signal_state import SignalState
 from config import GREEN_LIGHT_DURATION, YELLOW_LIGHT_DURATION
 
-class SignalController:
+
+class SmartSignalController:
     """
-    Controls traffic signals for a 4-sided intersection.
-    Cycles through sides sequentially with support for emergency preemption.
+    Adaptive controller with emergency preemption.
+
+    Call update(queued_counts) each frame, where queued_counts is a dict:
+      {"NORTH": int, "SOUTH": int, "EAST": int, "WEST": int}
     """
-    
+
     def __init__(self):
-        """Initialize signal controller with all sides starting as RED"""
         self.sides = ["NORTH", "EAST", "SOUTH", "WEST"]  # clockwise order
         self.current_side_index = 0
         self.current_side = self.sides[0]
-        
+
         # All signals start as RED
         self.signals = {
             "NORTH": SignalState.RED,
             "SOUTH": SignalState.RED,
             "EAST": SignalState.RED,
-            "WEST": SignalState.RED
+            "WEST": SignalState.RED,
         }
-        
+
         # Set first side to GREEN
         self.signals[self.current_side] = SignalState.GREEN
-        
+
         # Timing
         self.last_change_time = time.time()
         self.green_duration = GREEN_LIGHT_DURATION
@@ -52,76 +55,74 @@ class SignalController:
         self._resume_green_remaining = None
 
         # During any yellow phase (normal or emergency), this is the side
-        # whose vehicles are allowed to keep passing.  The OTHER yellow
-        # side is the "get-ready" side whose vehicles must wait.
+        # whose vehicles are allowed to keep passing.
         self.yellow_pass_side = None
 
     # ================================================================== #
-    #  Normal update (called every frame)
+    #  Update (called every frame)
     # ================================================================== #
-    def update(self):
+    def update(self, queued_counts: dict | None = None):
         if self.emergency_mode:
             self._update_emergency()
         else:
-            self._update_normal()
+            self._update_normal(queued_counts or {})
 
     # ------------------------------------------------------------------ #
-    #  Normal cycling
+    #  Normal cycling (adaptive)
     # ------------------------------------------------------------------ #
-    def _update_normal(self):
+    def _update_normal(self, queued_counts: dict):
         """
         GREEN → YELLOW (current + next-side get-ready)
         YELLOW → current RED, next GREEN
+
+        If the current side has no queued vehicles, it can transition
+        to YELLOW early.
         """
         current_time = time.time()
         elapsed = current_time - self.last_change_time
 
         current_state = self.signals[self.current_side]
         next_index = (self.current_side_index + 1) % len(self.sides)
-        next_side  = self.sides[next_index]
+        next_side = self.sides[next_index]
+
+        queued_now = queued_counts.get(self.current_side, 0)
+        can_switch_early = (queued_now == 0)
 
         # GREEN → YELLOW  (both current *and* next side turn yellow)
-        if current_state == SignalState.GREEN and elapsed >= self.green_duration:
+        if (current_state == SignalState.GREEN and
+                (elapsed >= self.green_duration or can_switch_early)):
             self.signals[self.current_side] = SignalState.YELLOW
-            self.signals[next_side]         = SignalState.YELLOW
+            self.signals[next_side] = SignalState.YELLOW
             self.yellow_pass_side = self.current_side   # outgoing side passes
             self.last_change_time = current_time
 
         # YELLOW → current goes RED, next goes GREEN
         elif current_state == SignalState.YELLOW and elapsed >= self.yellow_duration:
             self.signals[self.current_side] = SignalState.RED
-            self.signals[next_side]         = SignalState.GREEN
+            self.signals[next_side] = SignalState.GREEN
             self.yellow_pass_side = None
 
             # Advance pointer
             self.current_side_index = next_index
-            self.current_side       = next_side
-            self.last_change_time   = current_time
+            self.current_side = next_side
+            self.last_change_time = current_time
 
     # ================================================================== #
-    #  Emergency preemption
+    #  Emergency preemption (unchanged)
     # ================================================================== #
     def start_emergency(self, side: str):
-        """
-        Begin the preemption sequence.
-        Phase 1 ("TRANSITION_TO"): set current green side → YELLOW
-        and emergency side → YELLOW (get-ready), wait yellow_duration.
-        If the emergency side *is* already the green side, just stay green.
-        """
         self.emergency_mode = True
         self._emergency_side = side
 
         # If the emergency side is already green, skip transition
         if self.current_side == side and self.signals[side] == SignalState.GREEN:
             self._emergency_phase = "ACTIVE"
-            # ensure only this side is green
             for s in self.sides:
                 if s != side:
                     self.signals[s] = SignalState.RED
             return
 
         # Otherwise, transition:  current → YELLOW, emergency → YELLOW
-        # Current side (was green) is the "outgoing" side — its vehicles pass.
         self._emergency_phase = "TRANSITION_TO"
         self.yellow_pass_side = self.current_side   # outgoing side passes
         for s in self.sides:
@@ -132,19 +133,12 @@ class SignalController:
         self.last_change_time = time.time()
 
     def end_emergency(self, resume_side_index: int, resume_side: str, resume_green_remaining: float | None = None):
-        """
-        Begin winding down the emergency green.
-        Phase 3 ("TRANSITION_BACK"): emergency side → YELLOW,
-        resume side → YELLOW (get-ready), wait yellow_duration,
-        then resume normal cycle.
-        """
         self._resume_side_index = resume_side_index
         self._resume_side = resume_side
         self._resume_green_remaining = resume_green_remaining
         self._emergency_phase = "TRANSITION_BACK"
 
         # Emergency side → YELLOW, resume side → YELLOW (get-ready)
-        # Emergency side (was green) is "outgoing" — its vehicles pass.
         self.yellow_pass_side = self._emergency_side
         for s in self.sides:
             if s == self._emergency_side or s == self._resume_side:
@@ -154,14 +148,12 @@ class SignalController:
         self.last_change_time = time.time()
 
     def _update_emergency(self):
-        """State machine for the three emergency phases."""
         current_time = time.time()
         elapsed = current_time - self.last_change_time
 
         # Phase 1: waiting for yellow before giving emergency green
         if self._emergency_phase == "TRANSITION_TO":
             if elapsed >= self.yellow_duration:
-                # All RED, then emergency side GREEN
                 for s in self.sides:
                     self.signals[s] = SignalState.RED
                 self.signals[self._emergency_side] = SignalState.GREEN
@@ -173,12 +165,11 @@ class SignalController:
 
         # Phase 2: emergency green — just hold, no time-out
         elif self._emergency_phase == "ACTIVE":
-            pass   # EmergencyHandler calls end_emergency() when vehicle passes
+            pass
 
         # Phase 3: yellow transition back to normal cycle
         elif self._emergency_phase == "TRANSITION_BACK":
             if elapsed >= self.yellow_duration:
-                # Resume normal cycle
                 for s in self.sides:
                     self.signals[s] = SignalState.RED
 
@@ -207,30 +198,27 @@ class SignalController:
     # ================================================================== #
     def get_signal_state(self, side):
         return self.signals.get(side, SignalState.RED)
-    
+
     def is_green(self, side):
         return self.signals.get(side) == SignalState.GREEN
-    
+
     def is_red(self, side):
         return self.signals.get(side) == SignalState.RED
 
     def get_green_elapsed(self, side):
-        """Return seconds since *side* turned green, or -1 if not green."""
         if self.signals.get(side) != SignalState.GREEN:
             return -1
         return time.time() - self.last_change_time
-    
+
     def get_remaining_time(self):
-        """Get remaining time for current state"""
         current_time = time.time()
         elapsed = current_time - self.last_change_time
-        
+
         current_state = self.signals[self.current_side]
         if current_state == SignalState.GREEN:
             if self.emergency_mode and self._emergency_phase == "ACTIVE":
-                return 0   # no countdown during emergency hold
+                return 0
             return max(0, self.green_duration - elapsed)
         elif current_state == SignalState.YELLOW:
             return max(0, self.yellow_duration - elapsed)
         return 0
-

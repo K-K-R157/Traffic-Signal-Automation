@@ -39,6 +39,7 @@ class EmergencyHandler:
         # ---- saved normal-cycle state ---- #
         self._saved_side_index = None
         self._saved_side = None
+        self._saved_remaining_green = None
 
     # ------------------------------------------------------------------ #
     #  Called every frame by Intersection.update()
@@ -59,6 +60,11 @@ class EmergencyHandler:
         # 2) If we are handling one, check if it's resolved
         if self.active:
             self._check_resolved(cx, cy)
+            return
+
+        # If controller is still in emergency transition-back,
+        # do not start a new emergency yet.
+        if self.signal_controller.emergency_mode:
             return
 
         # 3) If nothing active but queue is non-empty, serve next
@@ -91,7 +97,18 @@ class EmergencyHandler:
         self.needs_signal_change = True
         self._saved_side_index = sc.current_side_index
         self._saved_side = sc.current_side
+        self._saved_remaining_green = self._calc_remaining_green(sc)
         sc.start_emergency(side)
+
+    def _calc_remaining_green(self, sc) -> float:
+        """Return remaining green time on the preempted side (seconds)."""
+        from traffic_signal.signal_state import SignalState
+        current_state = sc.signals.get(sc.current_side)
+        if current_state != SignalState.GREEN:
+            return 0.0
+        elapsed = time.time() - sc.last_change_time
+        remaining = sc.green_duration - elapsed
+        return max(0.0, remaining)
 
     # ------------------------------------------------------------------ #
     #  Check whether the current ambulance has passed
@@ -138,6 +155,7 @@ class EmergencyHandler:
             sc.end_emergency(
                 resume_side_index=self._saved_side_index,
                 resume_side=self._saved_side,
+                resume_green_remaining=self._saved_remaining_green,
             )
 
         self.active = False

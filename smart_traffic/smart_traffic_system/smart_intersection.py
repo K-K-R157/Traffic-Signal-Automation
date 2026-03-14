@@ -1,24 +1,18 @@
 """
-Intersection Module
-Manages the 4-sided intersection, vehicle queuing, and movement.
+Smart Intersection Module
 
-Key responsibilities:
-  • Spawn vehicles via TrafficGenerator (time-based).
-  • Separate each side's vehicles into *queued* (before stop-line)
-    and *through* (already past the stop-line).
-  • Queued vehicles maintain MIN_FOLLOWING_DISTANCE and obey signals.
-  • Through vehicles always keep moving.
-  • Emergency vehicle detection via EmergencyHandler.
+Uses SmartSignalController and provides per-side queued vehicle counts
+so green can end early if no vehicles are waiting.
 """
 
 import config
-from .traffic_generator import TrafficGenerator
+from traffic_simulation.traffic_generator import TrafficGenerator
 from emergency import EmergencyHandler
 from traffic_violation import TrafficViolationLogger
 
 
-class Intersection:
-    """Manages a 4-approach intersection with traffic signals."""
+class SmartIntersection:
+    """Manages a 4-approach intersection with smart signal timing."""
 
     SIDES = ("NORTH", "SOUTH", "EAST", "WEST")
 
@@ -54,11 +48,14 @@ class Intersection:
     #  Main update  (called once per frame)
     # ------------------------------------------------------------------ #
     def update(self):
-        self.signal_controller.update()
-        self._spawn_vehicles()
-
         cx = self.window_size[0] // 2
         cy = self.window_size[1] // 2
+
+        # Update signals using queued vehicle counts
+        queued_counts = self._get_queued_counts(cx, cy)
+        self.signal_controller.update(queued_counts)
+
+        self._spawn_vehicles()
 
         # Emergency vehicle detection
         self.emergency_handler.check_for_emergency(self.vehicles, cx, cy)
@@ -67,6 +64,18 @@ class Intersection:
             self._update_side(side, cx, cy)
 
         self._remove_crossed()
+
+    # ------------------------------------------------------------------ #
+    #  Count queued vehicles (before stop-line)
+    # ------------------------------------------------------------------ #
+    def _get_queued_counts(self, cx, cy):
+        counts = {}
+        for side in self.SIDES:
+            counts[side] = sum(
+                1 for v in self.vehicles[side]
+                if not v.crossed and not v.has_passed_stop_line(cx, cy)
+            )
+        return counts
 
     # ------------------------------------------------------------------ #
     #  Spawning
@@ -82,7 +91,7 @@ class Intersection:
                 self.vehicles[side].append(new_v)
 
     # ------------------------------------------------------------------ #
-    #  Per-side movement logic
+    #  Per-side movement logic (same as normal)
     # ------------------------------------------------------------------ #
     def _update_side(self, side, cx, cy):
         vehicles = self.vehicles[side]

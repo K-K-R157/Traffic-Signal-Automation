@@ -70,6 +70,14 @@ class Vehicle:
         self.queue_position  = queue_position
         self._path_ready     = False
 
+        # side-lane violation behavior (cars/trucks only, very rare)
+        self.in_offset_mag = config.LANE_OFFSET
+        self.out_offset_mag = config.LANE_OFFSET
+        self.in_middle = False
+        self.out_middle = False
+        self.violation_logged = False
+        self._assign_lane_behavior()
+
     # ------------------------------------------------------------------ #
     #  Path setup  (call once when screen size is known)
     # ------------------------------------------------------------------ #
@@ -78,7 +86,6 @@ class Vehicle:
             return
         self._path_ready = True
 
-        lo      = config.LANE_OFFSET
         # Spawn just off-screen: use half the relevant screen dimension + buffer
         if self.original_side in ("NORTH", "SOUTH"):
             base_spawn = cy + 60          # off-screen vertically
@@ -87,7 +94,11 @@ class Vehicle:
         spawn_d = base_spawn + self.queue_position * config.MIN_FOLLOWING_DISTANCE
         edge    = max(screen_w, screen_h) + 300
 
-        self.waypoints = self._build_path(cx, cy, lo, spawn_d, edge)
+        in_off = self._lane_offset(self.original_side, self.in_offset_mag)
+        exit_side = self._exit_direction()
+        out_off = self._lane_offset(exit_side, self.out_offset_mag)
+
+        self.waypoints = self._build_path(cx, cy, in_off, out_off, spawn_d, edge)
 
         if self.waypoints:
             self.x, self.y = self.waypoints[0]
@@ -119,25 +130,53 @@ class Vehicle:
         return pts
 
     # ------------------------------------------------------------------ #
+    #  Lane behavior helpers (side-line violation)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _lane_offset(side: str, mag: int) -> int:
+        """Return signed offset for a side (+ for NORTH/EAST, - for SOUTH/WEST)."""
+        return mag if side in ("NORTH", "EAST") else -mag
+
+    def _assign_lane_behavior(self):
+        """Assign rare middle-lane behavior for cars/trucks only."""
+        if self.vehicle_type not in ("CAR", "TRUCK"):
+            return
+
+        if random.random() < config.SIDE_LANE_VIOLATION_RATE:
+            pattern = random.choice(("MID_TO_NORMAL", "NORMAL_TO_MID", "MID_TO_MID"))
+            if pattern == "MID_TO_NORMAL":
+                self.in_offset_mag = 0
+                self.out_offset_mag = config.LANE_OFFSET
+            elif pattern == "NORMAL_TO_MID":
+                self.in_offset_mag = config.LANE_OFFSET
+                self.out_offset_mag = 0
+            else:  # MID_TO_MID
+                self.in_offset_mag = 0
+                self.out_offset_mag = 0
+
+        self.in_middle = (self.in_offset_mag == 0)
+        self.out_middle = (self.out_offset_mag == 0)
+
+    # ------------------------------------------------------------------ #
     #  Path builder
     # ------------------------------------------------------------------ #
-    def _build_path(self, cx, cy, lo, spawn_d, edge):
+    def _build_path(self, cx, cy, in_off, out_off, spawn_d, edge):
         # spawn positions  (Left-Hand Traffic: keep LEFT from driver POV)
         spawns = {
-            "NORTH": (cx + lo, cy - spawn_d),
-            "SOUTH": (cx - lo, cy + spawn_d),
-            "EAST":  (cx + spawn_d, cy + lo),
-            "WEST":  (cx - spawn_d, cy - lo),
+            "NORTH": (cx + in_off, cy - spawn_d),
+            "SOUTH": (cx + in_off, cy + spawn_d),
+            "EAST":  (cx + spawn_d, cy + in_off),
+            "WEST":  (cx - spawn_d, cy + in_off),
         }
         wp = [spawns[self.original_side]]
 
         # ---- straight ------------------------------------------------ #
         if self.turn_direction == 0:
             exits = {
-                "NORTH": (cx + lo,   cy + edge),
-                "SOUTH": (cx - lo,   cy - edge),
-                "EAST":  (cx - edge, cy + lo),
-                "WEST":  (cx + edge, cy - lo),
+                "NORTH": (cx + out_off, cy + edge),
+                "SOUTH": (cx + out_off, cy - edge),
+                "EAST":  (cx - edge,   cy + out_off),
+                "WEST":  (cx + edge,   cy + out_off),
             }
             wp.append(exits[self.original_side])
             return wp
@@ -145,24 +184,24 @@ class Vehicle:
         # ---- right turn (wide turn in LHT) -------------------------- #
         if self.turn_direction == 2:
             curves = {
-                "NORTH": ((cx + lo,      cy + lo - 15),
-                          (cx + lo,      cy + lo),
-                          (cx + lo - 15, cy + lo)),
-                "SOUTH": ((cx - lo,      cy - lo + 15),
-                          (cx - lo,      cy - lo),
-                          (cx - lo + 15, cy - lo)),
-                "EAST":  ((cx - lo + 15, cy + lo),
-                          (cx - lo,      cy + lo),
-                          (cx - lo,      cy + lo - 15)),
-                "WEST":  ((cx + lo - 15, cy - lo),
-                          (cx + lo,      cy - lo),
-                          (cx + lo,      cy - lo + 15)),
+                "NORTH": ((cx + in_off,      cy + out_off - 15),
+                          (cx + in_off,      cy + out_off),
+                          (cx + in_off - 15, cy + out_off)),
+                "SOUTH": ((cx + in_off,      cy + out_off + 15),
+                          (cx + in_off,      cy + out_off),
+                          (cx + in_off + 15, cy + out_off)),
+                "EAST":  ((cx + out_off + 15, cy + in_off),
+                          (cx + out_off,      cy + in_off),
+                          (cx + out_off,      cy + in_off - 15)),
+                "WEST":  ((cx + out_off - 15, cy + in_off),
+                          (cx + out_off,      cy + in_off),
+                          (cx + out_off,      cy + in_off + 15)),
             }
             exit_pts = {
-                "NORTH": (cx - edge, cy + lo),
-                "SOUTH": (cx + edge, cy - lo),
-                "EAST":  (cx - lo,   cy - edge),
-                "WEST":  (cx + lo,   cy + edge),
+                "NORTH": (cx - edge, cy + out_off),
+                "SOUTH": (cx + edge, cy + out_off),
+                "EAST":  (cx + out_off, cy - edge),
+                "WEST":  (cx + out_off, cy + edge),
             }
             p0, p1, p2 = curves[self.original_side]
             wp.extend(self._bezier(p0, p1, p2))
@@ -171,24 +210,24 @@ class Vehicle:
 
         # ---- left turn (short turn in LHT) -------------------------- #
         curves = {
-            "NORTH": ((cx + lo,       cy - lo + 15),
-                      (cx + lo,       cy - lo),
-                      (cx + lo + 15,  cy - lo)),
-            "SOUTH": ((cx - lo,       cy + lo - 15),
-                      (cx - lo,       cy + lo),
-                      (cx - lo - 15,  cy + lo)),
-            "EAST":  ((cx + lo + 15,  cy + lo),
-                      (cx + lo,       cy + lo),
-                      (cx + lo,       cy + lo + 15)),
-            "WEST":  ((cx - lo - 15,  cy - lo),
-                      (cx - lo,       cy - lo),
-                      (cx - lo,       cy - lo - 15)),
+            "NORTH": ((cx + in_off,       cy + out_off + 15),
+                      (cx + in_off,       cy + out_off),
+                      (cx + in_off + 15,  cy + out_off)),
+            "SOUTH": ((cx + in_off,       cy + out_off - 15),
+                      (cx + in_off,       cy + out_off),
+                      (cx + in_off - 15,  cy + out_off)),
+            "EAST":  ((cx + out_off + 15,  cy + in_off),
+                      (cx + out_off,       cy + in_off),
+                      (cx + out_off,       cy + in_off + 15)),
+            "WEST":  ((cx + out_off - 15,  cy + in_off),
+                      (cx + out_off,       cy + in_off),
+                      (cx + out_off,       cy + in_off - 15)),
         }
         exit_pts = {
-            "NORTH": (cx + edge, cy - lo),
-            "SOUTH": (cx - edge, cy + lo),
-            "EAST":  (cx + lo,   cy + edge),
-            "WEST":  (cx - lo,   cy - edge),
+            "NORTH": (cx + edge, cy + out_off),
+            "SOUTH": (cx - edge, cy + out_off),
+            "EAST":  (cx + out_off,   cy + edge),
+            "WEST":  (cx + out_off,   cy - edge),
         }
         p0, p1, p2 = curves[self.original_side]
         wp.extend(self._bezier(p0, p1, p2))
@@ -226,6 +265,16 @@ class Vehicle:
         dx, dy = tx - self.x, ty - self.y
         if abs(dx) > 0.01 or abs(dy) > 0.01:
             self.angle = math.degrees(math.atan2(dy, dx))
+
+    def should_log_violation(self, cx, cy) -> bool:
+        """Return True if this vehicle should log a side-lane violation."""
+        if self.violation_logged:
+            return False
+        if self.vehicle_type not in ("CAR", "TRUCK"):
+            return False
+        if not (self.in_middle or self.out_middle):
+            return False
+        return self.has_passed_stop_line(cx, cy)
 
     # ------------------------------------------------------------------ #
     #  Queue / stop-line helpers

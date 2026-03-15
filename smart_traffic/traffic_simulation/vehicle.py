@@ -28,11 +28,11 @@ class Vehicle:
     @staticmethod
     def generate_license_plate() -> str:
         while True:
-            state    = random.choice(config.LICENSE_PLATE_STATES)
+            state = random.choice(config.LICENSE_PLATE_STATES)
             district = random.randint(10, 99)
-            letter   = random.choice(config.LICENSE_PLATE_LETTERS)
-            number   = random.randint(1000, 9999)
-            plate    = f"{state}{district}{letter}{number}"
+            letter = random.choice(config.LICENSE_PLATE_LETTERS)
+            number = random.randint(1000, 9999)
+            plate = f"{state}{district}{letter}{number}"
             if plate not in Vehicle._used_plates:
                 Vehicle._used_plates.add(plate)
                 return plate
@@ -41,11 +41,11 @@ class Vehicle:
     #  Constructor
     # ------------------------------------------------------------------ #
     def __init__(self, original_side: str, vehicle_type: str, queue_position: int = 0):
-        self.original_side  = original_side
-        self.vehicle_type   = vehicle_type
-        self.vehicle_id     = Vehicle.generate_license_plate()
+        self.original_side = original_side
+        self.vehicle_type = vehicle_type
+        self.vehicle_id = Vehicle.generate_license_plate()
 
-        self.speed   = config.VEHICLE_SPEED
+        self.speed = config.VEHICLE_SPEED
         self.crossed = False          # left the screen
         self.stopped = False          # temporarily halted (red / queue)
 
@@ -60,15 +60,15 @@ class Vehicle:
         )[0]
 
         # float position & heading
-        self.x     = 0.0
-        self.y     = 0.0
+        self.x = 0.0
+        self.y = 0.0
         self.angle = 0.0             # degrees (from atan2)
 
         # waypoint path
         self.waypoints: list = []
-        self.wp_index: int   = 0
-        self.queue_position  = queue_position
-        self._path_ready     = False
+        self.wp_index: int = 0
+        self.queue_position = queue_position
+        self._path_ready = False
 
         # side-lane violation behavior (cars/trucks only, very rare)
         self.in_offset_mag = config.LANE_OFFSET
@@ -85,6 +85,8 @@ class Vehicle:
         if self._path_ready:
             return
         self._path_ready = True
+        self._last_cx = cx
+        self._last_cy = cy
 
         # Spawn just off-screen: use half the relevant screen dimension + buffer
         if self.original_side in ("NORTH", "SOUTH"):
@@ -92,18 +94,59 @@ class Vehicle:
         else:
             base_spawn = cx + 60          # off-screen horizontally
         spawn_d = base_spawn + self.queue_position * config.MIN_FOLLOWING_DISTANCE
-        edge    = max(screen_w, screen_h) + 300
+        edge = max(screen_w, screen_h) + 300
 
         in_off = self._lane_offset(self.original_side, self.in_offset_mag)
         exit_side = self._exit_direction()
         out_off = self._lane_offset(exit_side, self.out_offset_mag)
 
-        self.waypoints = self._build_path(cx, cy, in_off, out_off, spawn_d, edge)
+        self.waypoints = self._build_path(
+            cx, cy, in_off, out_off, spawn_d, edge)
 
         if self.waypoints:
             self.x, self.y = self.waypoints[0]
             self.wp_index = 1
             self._refresh_angle()
+
+    def recompute_path(self, cx: int, cy: int, screen_w: int, screen_h: int):
+        """Rebuild waypoints for a new window center, shifting the vehicle position."""
+        old_cx = getattr(self, '_last_cx', cx)
+        old_cy = getattr(self, '_last_cy', cy)
+        if old_cx == cx and old_cy == cy:
+            return
+
+        dx_shift = cx - old_cx
+        dy_shift = cy - old_cy
+        self._last_cx = cx
+        self._last_cy = cy
+
+        # Shift current position by the same delta as the center moved
+        self.x += dx_shift
+        self.y += dy_shift
+
+        # Rebuild waypoints from the new center
+        if self.original_side in ("NORTH", "SOUTH"):
+            base_spawn = cy + 60
+        else:
+            base_spawn = cx + 60
+        spawn_d = base_spawn + self.queue_position * config.MIN_FOLLOWING_DISTANCE
+        edge = max(screen_w, screen_h) + 300
+
+        in_off = self._lane_offset(self.original_side, self.in_offset_mag)
+        exit_side = self._exit_direction()
+        out_off = self._lane_offset(exit_side, self.out_offset_mag)
+
+        new_waypoints = self._build_path(
+            cx, cy, in_off, out_off, spawn_d, edge)
+
+        if new_waypoints and self.wp_index < len(new_waypoints):
+            # Keep current progress, update remaining waypoints
+            self.waypoints = new_waypoints
+        elif new_waypoints:
+            self.waypoints = new_waypoints
+            self.wp_index = min(self.wp_index, len(new_waypoints) - 1)
+
+        self._refresh_angle()
 
     # ------------------------------------------------------------------ #
     #  Turn direction helpers
@@ -113,8 +156,10 @@ class Vehicle:
         if self.turn_direction == 0:
             return self.original_side
 
-        right = {"NORTH": "EAST",  "SOUTH": "WEST",  "EAST": "SOUTH", "WEST": "NORTH"}
-        left  = {"NORTH": "WEST",  "SOUTH": "EAST",  "EAST": "NORTH", "WEST": "SOUTH"}
+        right = {"NORTH": "EAST",  "SOUTH": "WEST",
+                 "EAST": "SOUTH", "WEST": "NORTH"}
+        left = {"NORTH": "WEST",  "SOUTH": "EAST",
+                "EAST": "NORTH", "WEST": "SOUTH"}
         return right[self.original_side] if self.turn_direction == 2 else left[self.original_side]
 
     # -- quadratic Bézier ---------------------------------------------- #
@@ -143,7 +188,8 @@ class Vehicle:
             return
 
         if random.random() < config.SIDE_LANE_VIOLATION_RATE:
-            pattern = random.choice(("MID_TO_NORMAL", "NORMAL_TO_MID", "MID_TO_MID"))
+            pattern = random.choice(
+                ("MID_TO_NORMAL", "NORMAL_TO_MID", "MID_TO_MID"))
             if pattern == "MID_TO_NORMAL":
                 self.in_offset_mag = 0
                 self.out_offset_mag = config.LANE_OFFSET
@@ -282,10 +328,14 @@ class Vehicle:
     def get_distance_from_stop_line(self, cx, cy):
         """Positive → still approaching.  Negative → already past."""
         sl = config.STOP_LINE_OFFSET
-        if   self.original_side == "NORTH": return (cy - sl) - self.y
-        elif self.original_side == "SOUTH": return self.y - (cy + sl)
-        elif self.original_side == "EAST":  return self.x - (cx + sl)
-        elif self.original_side == "WEST":  return (cx - sl) - self.x
+        if self.original_side == "NORTH":
+            return (cy - sl) - self.y
+        elif self.original_side == "SOUTH":
+            return self.y - (cy + sl)
+        elif self.original_side == "EAST":
+            return self.x - (cx + sl)
+        elif self.original_side == "WEST":
+            return (cx - sl) - self.x
         return 0
 
     def has_passed_stop_line(self, cx, cy):
@@ -293,8 +343,12 @@ class Vehicle:
 
     def distance_to_vehicle_ahead(self, other):
         """Signed gap to *other* on the same approach lane (positive = ahead)."""
-        if   self.original_side == "NORTH": return other.y - self.y
-        elif self.original_side == "SOUTH": return self.y - other.y
-        elif self.original_side == "EAST":  return self.x - other.x
-        elif self.original_side == "WEST":  return other.x - self.x
+        if self.original_side == "NORTH":
+            return other.y - self.y
+        elif self.original_side == "SOUTH":
+            return self.y - other.y
+        elif self.original_side == "EAST":
+            return self.x - other.x
+        elif self.original_side == "WEST":
+            return other.x - self.x
         return 999

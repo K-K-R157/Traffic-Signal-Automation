@@ -74,13 +74,19 @@ IMAGE_DIRECTION = {
 # ========================
 # License Plate
 # ========================
-LICENSE_PLATE_STATES = ['UP', 'DL', 'MH', 'KA', 'TN', 'HR', 'RJ', 'GJ', 'MP', 'WB']
+LICENSE_PLATE_STATES = ['UP', 'DL', 'MH',
+                        'KA', 'TN', 'HR', 'RJ', 'GJ', 'MP', 'WB']
 LICENSE_PLATE_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 # ========================
 # Display Settings
 # ========================
-FULLSCREEN = True
+FULLSCREEN = False
+RESIZABLE_WINDOW = True
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 850
+MIN_WINDOW_WIDTH = 900
+MIN_WINDOW_HEIGHT = 650
 FPS = 60
 
 # ========================
@@ -99,10 +105,12 @@ COLOR_TEXT = (255, 255, 255)
 # Intersection Layout
 # ========================
 ROAD_WIDTH = 220
-LANE_OFFSET = ROAD_WIDTH // 4       # Center of each lane from road center (~55px)
+# Center of each lane from road center (~55px)
+LANE_OFFSET = ROAD_WIDTH // 4
 SIGNAL_SIZE = 25
 STOP_LINE_OFFSET = 130              # Distance from center to stop line
-SPAWN_DISTANCE = 550                # Distance from center to spawn point (near screen edge)
+# Distance from center to spawn point (near screen edge)
+SPAWN_DISTANCE = 550
 
 # ========================
 # Vehicle Spacing
@@ -112,7 +120,8 @@ MIN_FOLLOWING_DISTANCE = 70         # Minimum gap between vehicles in queue
 # ========================
 # Emergency Vehicle Settings
 # ========================
-EMERGENCY_DETECTION_DISTANCE = 350  # Pixels before stop-line to trigger preemption
+# Pixels before stop-line to trigger preemption
+EMERGENCY_DETECTION_DISTANCE = 350
 
 # ========================
 # Traffic Violation Settings
@@ -126,4 +135,4 @@ DB_HOST = "localhost"
 DB_PORT = 3306
 DB_NAME = "smart_traffic_db"
 DB_USER = "root"
-DB_PASSWORD = ""
+DB_PASSWORD = "123Candle123@"

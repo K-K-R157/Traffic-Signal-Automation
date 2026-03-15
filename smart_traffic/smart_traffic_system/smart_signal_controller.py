@@ -88,11 +88,10 @@ class SmartSignalController:
         queued_now = queued_counts.get(self.current_side, 0)
         can_switch_early = (queued_now == 0)
 
-        # GREEN → YELLOW  (both current *and* next side turn yellow)
+        # GREEN → YELLOW  (only outgoing side turns yellow; next stays RED)
         if (current_state == SignalState.GREEN and
                 (elapsed >= self.green_duration or can_switch_early)):
             self.signals[self.current_side] = SignalState.YELLOW
-            self.signals[next_side] = SignalState.YELLOW
             self.yellow_pass_side = self.current_side   # outgoing side passes
             self.last_change_time = current_time
 
@@ -122,11 +121,12 @@ class SmartSignalController:
                     self.signals[s] = SignalState.RED
             return
 
-        # Otherwise, transition:  current → YELLOW, emergency → YELLOW
+        # Otherwise, transition: current -> YELLOW, emergency side stays RED
+        # until transition completes. This keeps one clearly active approach.
         self._emergency_phase = "TRANSITION_TO"
         self.yellow_pass_side = self.current_side   # outgoing side passes
         for s in self.sides:
-            if s == self.current_side or s == side:
+            if s == self.current_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -138,10 +138,11 @@ class SmartSignalController:
         self._resume_green_remaining = resume_green_remaining
         self._emergency_phase = "TRANSITION_BACK"
 
-        # Emergency side → YELLOW, resume side → YELLOW (get-ready)
+        # Emergency side -> YELLOW while all other sides remain RED
+        # until we return to the resumed GREEN side.
         self.yellow_pass_side = self._emergency_side
         for s in self.sides:
-            if s == self._emergency_side or s == self._resume_side:
+            if s == self._emergency_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -157,7 +158,8 @@ class SmartSignalController:
                 for s in self.sides:
                     self.signals[s] = SignalState.RED
                 self.signals[self._emergency_side] = SignalState.GREEN
-                self.current_side_index = self.sides.index(self._emergency_side)
+                self.current_side_index = self.sides.index(
+                    self._emergency_side)
                 self.current_side = self._emergency_side
                 self.yellow_pass_side = None
                 self._emergency_phase = "ACTIVE"
@@ -182,8 +184,10 @@ class SmartSignalController:
                 resume_remaining = self._resume_green_remaining
                 if resume_remaining is None:
                     resume_remaining = self.green_duration
-                resume_remaining = max(5.0, min(self.green_duration, resume_remaining))
-                self.last_change_time = current_time - (self.green_duration - resume_remaining)
+                resume_remaining = max(
+                    5.0, min(self.green_duration, resume_remaining))
+                self.last_change_time = current_time - \
+                    (self.green_duration - resume_remaining)
 
                 # Clear emergency state
                 self.emergency_mode = False
@@ -222,3 +226,33 @@ class SmartSignalController:
         elif current_state == SignalState.YELLOW:
             return max(0, self.yellow_duration - elapsed)
         return 0
+
+    # ================================================================== #
+    #  Manual controls (for API/UI)
+    # ================================================================== #
+    def set_manual_green(self, side: str):
+        """Force one side to GREEN and all others to RED."""
+        side = side.upper()
+        if side not in self.sides:
+            raise ValueError(f"Invalid side: {side}")
+
+        self.emergency_mode = False
+        self._emergency_phase = None
+        self._emergency_side = None
+        self._resume_side_index = None
+        self._resume_side = None
+        self._resume_green_remaining = None
+        self.yellow_pass_side = None
+
+        for s in self.sides:
+            self.signals[s] = SignalState.RED
+        self.signals[side] = SignalState.GREEN
+
+        self.current_side_index = self.sides.index(side)
+        self.current_side = side
+        self.last_change_time = time.time()
+
+    def set_durations(self, green_duration: float, yellow_duration: float):
+        """Update cycle timing values with safe lower bounds."""
+        self.green_duration = max(5.0, float(green_duration))
+        self.yellow_duration = max(2.0, float(yellow_duration))

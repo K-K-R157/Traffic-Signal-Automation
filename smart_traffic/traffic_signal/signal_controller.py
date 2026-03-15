@@ -12,18 +12,19 @@ import time
 from .signal_state import SignalState
 from config import GREEN_LIGHT_DURATION, YELLOW_LIGHT_DURATION
 
+
 class SignalController:
     """
     Controls traffic signals for a 4-sided intersection.
     Cycles through sides sequentially with support for emergency preemption.
     """
-    
+
     def __init__(self):
         """Initialize signal controller with all sides starting as RED"""
         self.sides = ["NORTH", "EAST", "SOUTH", "WEST"]  # clockwise order
         self.current_side_index = 0
         self.current_side = self.sides[0]
-        
+
         # All signals start as RED
         self.signals = {
             "NORTH": SignalState.RED,
@@ -31,10 +32,10 @@ class SignalController:
             "EAST": SignalState.RED,
             "WEST": SignalState.RED
         }
-        
+
         # Set first side to GREEN
         self.signals[self.current_side] = SignalState.GREEN
-        
+
         # Timing
         self.last_change_time = time.time()
         self.green_duration = GREEN_LIGHT_DURATION
@@ -78,25 +79,24 @@ class SignalController:
 
         current_state = self.signals[self.current_side]
         next_index = (self.current_side_index + 1) % len(self.sides)
-        next_side  = self.sides[next_index]
+        next_side = self.sides[next_index]
 
-        # GREEN → YELLOW  (both current *and* next side turn yellow)
+        # GREEN → YELLOW  (only outgoing side turns yellow; next stays RED)
         if current_state == SignalState.GREEN and elapsed >= self.green_duration:
             self.signals[self.current_side] = SignalState.YELLOW
-            self.signals[next_side]         = SignalState.YELLOW
             self.yellow_pass_side = self.current_side   # outgoing side passes
             self.last_change_time = current_time
 
         # YELLOW → current goes RED, next goes GREEN
         elif current_state == SignalState.YELLOW and elapsed >= self.yellow_duration:
             self.signals[self.current_side] = SignalState.RED
-            self.signals[next_side]         = SignalState.GREEN
+            self.signals[next_side] = SignalState.GREEN
             self.yellow_pass_side = None
 
             # Advance pointer
             self.current_side_index = next_index
-            self.current_side       = next_side
-            self.last_change_time   = current_time
+            self.current_side = next_side
+            self.last_change_time = current_time
 
     # ================================================================== #
     #  Emergency preemption
@@ -120,12 +120,11 @@ class SignalController:
                     self.signals[s] = SignalState.RED
             return
 
-        # Otherwise, transition:  current → YELLOW, emergency → YELLOW
-        # Current side (was green) is the "outgoing" side — its vehicles pass.
+        # Otherwise, transition:  only current → YELLOW, all others → RED
         self._emergency_phase = "TRANSITION_TO"
         self.yellow_pass_side = self.current_side   # outgoing side passes
         for s in self.sides:
-            if s == self.current_side or s == side:
+            if s == self.current_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -143,11 +142,10 @@ class SignalController:
         self._resume_green_remaining = resume_green_remaining
         self._emergency_phase = "TRANSITION_BACK"
 
-        # Emergency side → YELLOW, resume side → YELLOW (get-ready)
-        # Emergency side (was green) is "outgoing" — its vehicles pass.
+        # Only emergency side → YELLOW, all others → RED
         self.yellow_pass_side = self._emergency_side
         for s in self.sides:
-            if s == self._emergency_side or s == self._resume_side:
+            if s == self._emergency_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -165,7 +163,8 @@ class SignalController:
                 for s in self.sides:
                     self.signals[s] = SignalState.RED
                 self.signals[self._emergency_side] = SignalState.GREEN
-                self.current_side_index = self.sides.index(self._emergency_side)
+                self.current_side_index = self.sides.index(
+                    self._emergency_side)
                 self.current_side = self._emergency_side
                 self.yellow_pass_side = None
                 self._emergency_phase = "ACTIVE"
@@ -191,8 +190,10 @@ class SignalController:
                 resume_remaining = self._resume_green_remaining
                 if resume_remaining is None:
                     resume_remaining = self.green_duration
-                resume_remaining = max(5.0, min(self.green_duration, resume_remaining))
-                self.last_change_time = current_time - (self.green_duration - resume_remaining)
+                resume_remaining = max(
+                    5.0, min(self.green_duration, resume_remaining))
+                self.last_change_time = current_time - \
+                    (self.green_duration - resume_remaining)
 
                 # Clear emergency state
                 self.emergency_mode = False
@@ -207,10 +208,10 @@ class SignalController:
     # ================================================================== #
     def get_signal_state(self, side):
         return self.signals.get(side, SignalState.RED)
-    
+
     def is_green(self, side):
         return self.signals.get(side) == SignalState.GREEN
-    
+
     def is_red(self, side):
         return self.signals.get(side) == SignalState.RED
 
@@ -219,12 +220,12 @@ class SignalController:
         if self.signals.get(side) != SignalState.GREEN:
             return -1
         return time.time() - self.last_change_time
-    
+
     def get_remaining_time(self):
         """Get remaining time for current state"""
         current_time = time.time()
         elapsed = current_time - self.last_change_time
-        
+
         current_state = self.signals[self.current_side]
         if current_state == SignalState.GREEN:
             if self.emergency_mode and self._emergency_phase == "ACTIVE":
@@ -233,4 +234,3 @@ class SignalController:
         elif current_state == SignalState.YELLOW:
             return max(0, self.yellow_duration - elapsed)
         return 0
-

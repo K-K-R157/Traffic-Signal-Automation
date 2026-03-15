@@ -27,6 +27,24 @@ cd traffic_simulation_implementation
 python main.py
 ```
 
+## Run API Backend For React UI
+
+```bash
+cd smart_traffic
+pip install flask
+python api_server.py
+```
+
+API server starts on `http://127.0.0.1:5000` and exposes:
+
+- `GET /api/state` - live simulation state
+- `POST /api/control/running` - pause/resume simulation
+- `POST /api/control/reset` - reset simulation
+- `POST /api/control/speed` - update simulation speed
+- `POST /api/control/timings` - update green/yellow timings
+- `POST /api/control/manual-override` - force one side GREEN
+- `POST /api/control/emergency` - trigger emergency priority by side
+
 ## Controls
 
 - **ESC** or **Q** - Exit simulation

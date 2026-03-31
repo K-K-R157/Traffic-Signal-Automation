@@ -5,7 +5,10 @@ Logs side-lane violations to a MySQL database and prints an alert
 in the terminal.
 """
 
-import mysql.connector
+try:
+    import mysql.connector
+except ImportError:
+    mysql = None
 import config
 
 
@@ -16,10 +19,16 @@ class TrafficViolationLogger:
         self._conn = None
         self._cursor = None
         self._connected = False
+        self._disabled = False
+        self._warned = False
 
     def _connect(self):
         if self._connected and self._conn and self._cursor:
             return
+        if mysql is None:
+            raise RuntimeError(
+                "mysql-connector-python is not installed in this Python environment"
+            )
         self._conn = mysql.connector.connect(
             host=config.DB_HOST,
             port=config.DB_PORT,
@@ -49,6 +58,9 @@ class TrafficViolationLogger:
         self._conn.commit()
 
     def log_violation(self, vehicle):
+        if self._disabled:
+            return
+
         try:
             self._connect()
             self._cursor.execute(
@@ -74,4 +86,11 @@ class TrafficViolationLogger:
                 f"out_middle={vehicle.out_middle}"
             )
         except Exception as exc:
-            print(f"[VIOLATION][ERROR] Failed to log: {exc}")
+            # Disable DB logging after the first failure to avoid noisy output.
+            self._disabled = True
+            self._connected = False
+            self._conn = None
+            self._cursor = None
+            if not self._warned:
+                self._warned = True
+                print(f"[VIOLATION][WARN] DB logging disabled: {exc}")

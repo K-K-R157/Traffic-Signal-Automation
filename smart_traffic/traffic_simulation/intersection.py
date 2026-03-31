@@ -30,6 +30,7 @@ class Intersection:
 
         self.vehicles = {s: [] for s in self.SIDES}
         self.window_size = (1920, 1080)
+        self._last_center = (1920 // 2, 1080 // 2)
 
         # statistics
         self.total_vehicles_crossed = 0
@@ -39,6 +40,15 @@ class Intersection:
     #  Public helpers
     # ------------------------------------------------------------------ #
     def set_window_size(self, w, h):
+        new_cx, new_cy = w // 2, h // 2
+        old_cx, old_cy = self._last_center
+
+        if (new_cx != old_cx or new_cy != old_cy):
+            for side in self.SIDES:
+                for v in self.vehicles[side]:
+                    v.recompute_path(new_cx, new_cy, w, h)
+            self._last_center = (new_cx, new_cy)
+
         self.window_size = (w, h)
 
     def get_all_vehicles(self):
@@ -112,8 +122,10 @@ class Intersection:
             hold_queue = True
 
         # Split into "queued" (before stop-line) and "through" (past it)
-        queued  = [v for v in vehicles if not v.has_passed_stop_line(cx, cy) and not v.crossed]
-        through = [v for v in vehicles if v.has_passed_stop_line(cx, cy) and not v.crossed]
+        queued = [v for v in vehicles if not v.has_passed_stop_line(
+            cx, cy) and not v.crossed]
+        through = [v for v in vehicles if v.has_passed_stop_line(
+            cx, cy) and not v.crossed]
 
         # Sort queued so that the vehicle closest to stop-line is index 0
         queued.sort(key=lambda v: v.get_distance_from_stop_line(cx, cy))
@@ -162,4 +174,5 @@ class Intersection:
                     vt = v.vehicle_type
                     if vt in self.vehicles_crossed_by_type:
                         self.vehicles_crossed_by_type[vt] += 1
-            self.vehicles[side] = [v for v in self.vehicles[side] if not v.crossed]
+            self.vehicles[side] = [
+                v for v in self.vehicles[side] if not v.crossed]

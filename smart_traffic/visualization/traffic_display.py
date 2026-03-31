@@ -18,31 +18,26 @@ class TrafficDisplay:
     def __init__(self):
         pygame.init()
 
-        if config.FULLSCREEN:
-            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-        else:
-            info = pygame.display.Info()
-            self.screen = pygame.display.set_mode(
-                (info.current_w - 100, info.current_h - 100)
-            )
+        self.fullscreen = config.FULLSCREEN
+        self._window_size = self._initial_window_size()
+        self.screen = self._create_display(self._window_size)
 
-        self.width  = self.screen.get_width()
+        self.width = self.screen.get_width()
         self.height = self.screen.get_height()
         pygame.display.set_caption("Smart Traffic Signal Simulation")
         self.clock = pygame.time.Clock()
 
         # fonts
-        self.font_large      = pygame.font.Font(None, 48)
-        self.font_medium     = pygame.font.Font(None, 32)
-        self.font_small      = pygame.font.Font(None, 24)
+        self.font_large = pygame.font.Font(None, 48)
+        self.font_medium = pygame.font.Font(None, 32)
+        self.font_small = pygame.font.Font(None, 24)
         self.font_vehicle_id = pygame.font.Font(None, 18)
-
-        self.fullscreen = config.FULLSCREEN
 
         # ----- load vehicle images ----- #
         # { vehicle_type : [surface, surface, …] }
         self.vehicle_images: dict[str, list[pygame.Surface]] = {}
-        self._vehicle_image_map: dict[str, pygame.Surface] = {}  # vid → chosen surface
+        # vid → chosen surface
+        self._vehicle_image_map: dict[str, pygame.Surface] = {}
         self._load_vehicle_images()
 
     # ------------------------------------------------------------------ #
@@ -93,17 +88,51 @@ class TrafficDisplay:
     # ------------------------------------------------------------------ #
     #  Fullscreen toggle
     # ------------------------------------------------------------------ #
+    def _initial_window_size(self):
+        info = pygame.display.Info()
+        default_w = getattr(config, "WINDOW_WIDTH", info.current_w - 100)
+        default_h = getattr(config, "WINDOW_HEIGHT", info.current_h - 100)
+        min_w = getattr(config, "MIN_WINDOW_WIDTH", 900)
+        min_h = getattr(config, "MIN_WINDOW_HEIGHT", 650)
+
+        width = max(min_w, min(int(default_w),
+                    max(min_w, info.current_w - 40)))
+        height = max(min_h, min(int(default_h),
+                     max(min_h, info.current_h - 80)))
+        return (width, height)
+
+    def _create_display(self, size):
+        if self.fullscreen:
+            return pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+
+        flags = pygame.RESIZABLE if getattr(
+            config, "RESIZABLE_WINDOW", True) else 0
+        return pygame.display.set_mode(size, flags)
+
+    def _apply_window_resize(self, width, height):
+        min_w = getattr(config, "MIN_WINDOW_WIDTH", 900)
+        min_h = getattr(config, "MIN_WINDOW_HEIGHT", 650)
+        safe_size = (max(min_w, int(width)), max(min_h, int(height)))
+        self._window_size = safe_size
+        self.screen = self._create_display(safe_size)
+        self.width, self.height = self.screen.get_size()
+        self._update_fonts()
+
     def toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
-        if self.fullscreen:
-            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-        else:
-            info = pygame.display.Info()
-            self.screen = pygame.display.set_mode(
-                (info.current_w - 100, info.current_h - 100)
-            )
-        self.width  = self.screen.get_width()
+        self.screen = self._create_display(self._window_size)
+        self.width = self.screen.get_width()
         self.height = self.screen.get_height()
+        self._update_fonts()
+
+    def _update_fonts(self):
+        """Recalculate font sizes based on current window dimensions."""
+        scale = min(self.width / 1400, self.height / 850)
+        scale = max(0.6, min(scale, 1.5))
+        self.font_large = pygame.font.Font(None, max(24, int(48 * scale)))
+        self.font_medium = pygame.font.Font(None, max(18, int(32 * scale)))
+        self.font_small = pygame.font.Font(None, max(14, int(24 * scale)))
+        self.font_vehicle_id = pygame.font.Font(None, max(12, int(18 * scale)))
 
     # ------------------------------------------------------------------ #
     #  Main draw entry point
@@ -136,9 +165,11 @@ class TrafficDisplay:
     #  Roads & markings
     # ------------------------------------------------------------------ #
     def _draw_roads(self):
-        cx = self.width  // 2
+        cx = self.width // 2
         cy = self.height // 2
-        rw = config.ROAD_WIDTH
+        scale = min(self.width / 1400, self.height / 850)
+        scale = max(0.6, min(scale, 1.5))
+        rw = int(config.ROAD_WIDTH * scale)
 
         # vertical road
         pygame.draw.rect(self.screen, config.COLOR_ROAD,
@@ -186,7 +217,7 @@ class TrafficDisplay:
     #  Traffic signals
     # ------------------------------------------------------------------ #
     def _draw_signals(self, sc):
-        cx = self.width  // 2
+        cx = self.width // 2
         cy = self.height // 2
         off = 120
 
@@ -208,9 +239,12 @@ class TrafficDisplay:
 
         for side, pos in positions.items():
             state = sc.get_signal_state(side)
-            if   state == SignalState.RED:    color = config.COLOR_SIGNAL_RED
-            elif state == SignalState.YELLOW: color = config.COLOR_SIGNAL_YELLOW
-            else:                            color = config.COLOR_SIGNAL_GREEN
+            if state == SignalState.RED:
+                color = config.COLOR_SIGNAL_RED
+            elif state == SignalState.YELLOW:
+                color = config.COLOR_SIGNAL_YELLOW
+            else:
+                color = config.COLOR_SIGNAL_GREEN
 
             # background box
             bg = pygame.Rect(pos[0] - 25, pos[1] - 40, 50, 80)
@@ -229,7 +263,7 @@ class TrafficDisplay:
             remaining = sc.get_remaining_time()
             # Normal cycle: show timer for active side and next-side yellow.
             # Emergency transition: show timer for any side that is yellow.
-            next_idx  = (sc.current_side_index + 1) % len(sc.sides)
+            next_idx = (sc.current_side_index + 1) % len(sc.sides)
             next_side = sc.sides[next_idx]
             if sc.emergency_mode and state == SignalState.YELLOW:
                 show_timer = True
@@ -290,53 +324,66 @@ class TrafficDisplay:
 
         y = py + 15
         t = self.font_medium.render("Statistics", True, config.COLOR_TEXT)
-        self.screen.blit(t, (px + 15, y)); y += 45
+        self.screen.blit(t, (px + 15, y))
+        y += 45
 
         self.screen.blit(
-            self.font_small.render("Vehicles Waiting:", True, config.COLOR_TEXT),
+            self.font_small.render("Vehicles Waiting:",
+                                   True, config.COLOR_TEXT),
             (px + 15, y)
-        ); y += 30
+        )
+        y += 30
 
         for side in ("NORTH", "SOUTH", "EAST", "WEST"):
-            cnt   = intersection.get_vehicle_count(side)
+            cnt = intersection.get_vehicle_count(side)
             state = intersection.signal_controller.get_signal_state(side)
-            if   state == SignalState.GREEN:  c = config.COLOR_SIGNAL_GREEN
-            elif state == SignalState.YELLOW: c = config.COLOR_SIGNAL_YELLOW
-            else:                            c = config.COLOR_SIGNAL_RED
+            if state == SignalState.GREEN:
+                c = config.COLOR_SIGNAL_GREEN
+            elif state == SignalState.YELLOW:
+                c = config.COLOR_SIGNAL_YELLOW
+            else:
+                c = config.COLOR_SIGNAL_RED
             lbl = self.font_small.render(f"  {side}: {cnt}", True, c)
-            self.screen.blit(lbl, (px + 20, y)); y += 28
+            self.screen.blit(lbl, (px + 20, y))
+            y += 28
 
         y += 15
         total = intersection.get_total_vehicle_count()
         self.screen.blit(
-            self.font_small.render(f"Total Active: {total}", True, config.COLOR_TEXT),
+            self.font_small.render(
+                f"Total Active: {total}", True, config.COLOR_TEXT),
             (px + 15, y)
-        ); y += 35
+        )
+        y += 35
 
         crossed = intersection.total_vehicles_crossed
         self.screen.blit(
             self.font_small.render(f"Vehicles Crossed: {crossed}", True,
                                    config.COLOR_TEXT),
             (px + 15, y)
-        ); y += 30
+        )
+        y += 30
 
         self.screen.blit(
-            self.font_small.render("Crossed by Type:", True, config.COLOR_TEXT),
+            self.font_small.render(
+                "Crossed by Type:", True, config.COLOR_TEXT),
             (px + 15, y)
-        ); y += 28
+        )
+        y += 28
 
         type_colors = {"CAR": (0, 180, 255), "TRUCK": (0, 200, 120),
                        "AMBULANCE": (255, 100, 100)}
         for vt, clr in type_colors.items():
             cnt = intersection.vehicles_crossed_by_type.get(vt, 0)
             lbl = self.font_small.render(f"  {vt}: {cnt}", True, clr)
-            self.screen.blit(lbl, (px + 20, y)); y += 28
+            self.screen.blit(lbl, (px + 20, y))
+            y += 28
 
     # ------------------------------------------------------------------ #
     #  Controls footer
     # ------------------------------------------------------------------ #
     def _draw_controls(self):
-        txt = "Controls: ESC or Q - Exit  |  F - Toggle Fullscreen"
+        txt = "Controls: ESC or Q - Exit  |  F - Toggle Fullscreen  |  Drag window edges to resize"
         lbl = self.font_small.render(txt, True, config.COLOR_TEXT)
         self.screen.blit(lbl, (self.width // 2 - lbl.get_width() // 2,
                                self.height - 40))
@@ -386,6 +433,8 @@ class TrafficDisplay:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
+            if event.type == pygame.VIDEORESIZE and not self.fullscreen:
+                self._apply_window_resize(event.w, event.h)
             if event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     return True

@@ -263,7 +263,7 @@ function App() {
 
     return () => {
       socketRef.current = null;
-      socket.disconnect();
+      socket.disconnect(); 
     };
   }, [token, user]);
 

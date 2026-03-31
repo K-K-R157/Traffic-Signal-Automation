@@ -17,7 +17,7 @@ from flask_socketio import SocketIO, emit
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
-from smart_traffic_system import SmartIntersection, SmartSignalController
+from smart_traffic_system import SmartIntersection, SmartSignalController 
 from traffic_signal.signal_state import SignalState
 from visualization import TrafficDisplay
 

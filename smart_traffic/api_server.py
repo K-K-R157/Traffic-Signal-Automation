@@ -86,6 +86,22 @@ class MySQLRepository:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS traffic_violations (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    vehicle_id VARCHAR(32) NOT NULL,
+                    vehicle_type VARCHAR(16) NOT NULL,
+                    side VARCHAR(8) NOT NULL,
+                    violation_type VARCHAR(32) NOT NULL,
+                    in_middle TINYINT(1) NOT NULL,
+                    out_middle TINYINT(1) NOT NULL,
+                    action_taken TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            self._ensure_action_taken_column(cursor)
             conn.commit()
             self._seed_default_users(cursor)
             conn.commit()
@@ -97,6 +113,19 @@ class MySQLRepository:
                 cursor.close()
             if conn:
                 conn.close()
+
+    def _ensure_action_taken_column(self, cursor):
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE traffic_violations
+                ADD COLUMN action_taken TINYINT(1) NOT NULL DEFAULT 0
+                """
+            )
+        except Exception as exc:
+            # Ignore duplicate-column errors so existing schemas stay compatible.
+            if "Duplicate column name" not in str(exc):
+                raise
 
     def _seed_default_users(self, cursor):
         defaults = [
@@ -191,6 +220,7 @@ class MySQLRepository:
                     violation_type,
                     in_middle,
                     out_middle,
+                    action_taken,
                     created_at
                 FROM traffic_violations
                 ORDER BY id DESC
@@ -202,6 +232,67 @@ class MySQLRepository:
         except Exception as exc:
             self._last_error = str(exc)
             return []
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def update_violation_action(self, violation_id: int, action_taken: bool) -> bool:
+        conn = None
+        cursor = None
+        try:
+            conn = self._connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE traffic_violations
+                SET action_taken = %s
+                WHERE id = %s
+                """,
+                (1 if action_taken else 0, violation_id),
+            )
+            conn.commit()
+            self._last_error = None
+            return cursor.rowcount > 0
+        except Exception as exc:
+            self._last_error = str(exc)
+            return False
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def delete_violation_if_action_taken(self, violation_id: int) -> tuple[bool, str]:
+        conn = None
+        cursor = None
+        try:
+            conn = self._connect()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT action_taken FROM traffic_violations WHERE id = %s",
+                (violation_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                self._last_error = None
+                return False, "NOT_FOUND"
+
+            if not bool(row.get("action_taken")):
+                self._last_error = None
+                return False, "ACTION_NOT_TAKEN"
+
+            cursor.execute(
+                "DELETE FROM traffic_violations WHERE id = %s",
+                (violation_id,),
+            )
+            conn.commit()
+            self._last_error = None
+            return True, "DELETED"
+        except Exception as exc:
+            self._last_error = str(exc)
+            return False, "DB_ERROR"
         finally:
             if cursor:
                 cursor.close()
@@ -595,6 +686,7 @@ class SimulationService:
                 "violationType": row["violation_type"],
                 "inMiddle": bool(row["in_middle"]),
                 "outMiddle": bool(row["out_middle"]),
+                "actionTaken": bool(row.get("action_taken")),
                 "createdAt": row["created_at"].isoformat() if row.get("created_at") else None,
             }
             for row in rows
@@ -606,6 +698,12 @@ class SimulationService:
             "total": len(mapped_rows),
             "rows": mapped_rows,
         }
+
+    def update_violation_action(self, violation_id: int, action_taken: bool) -> bool:
+        return self.repository.update_violation_action(violation_id, action_taken)
+
+    def delete_violation(self, violation_id: int) -> tuple[bool, str]:
+        return self.repository.delete_violation_if_action_taken(violation_id)
 
 
 app = Flask(__name__)
@@ -864,6 +962,53 @@ def system_health():
 @require_auth
 @require_roles("SYSTEM_ADMIN")
 def violations_report():
+    return jsonify({"ok": True, "report": service.get_violation_report()})
+
+
+@app.route("/api/violations/<int:violation_id>/action", methods=["POST", "OPTIONS"])
+@require_auth
+@require_roles("SYSTEM_ADMIN")
+def update_violation_action(violation_id: int):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    payload = request.get_json(silent=True) or {}
+    raw_value = payload.get("actionTaken")
+    if isinstance(raw_value, bool):
+        action_taken = raw_value
+    elif isinstance(raw_value, (int, float)):
+        action_taken = bool(raw_value)
+    elif isinstance(raw_value, str):
+        action_taken = raw_value.strip().lower() in {"1", "true", "yes", "taken"}
+    else:
+        return jsonify({"ok": False, "error": "actionTaken is required"}), 400
+
+    if not service.update_violation_action(violation_id, action_taken):
+        return jsonify({"ok": False, "error": "Violation not found or update failed"}), 404
+
+    _audit(
+        "VIOLATION_ACTION_UPDATED",
+        f"Violation {violation_id} actionTaken set to {action_taken}.",
+    )
+    return jsonify({"ok": True, "report": service.get_violation_report()})
+
+
+@app.route("/api/violations/<int:violation_id>/delete", methods=["POST", "OPTIONS"])
+@require_auth
+@require_roles("SYSTEM_ADMIN")
+def delete_violation(violation_id: int):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    deleted, reason = service.delete_violation(violation_id)
+    if not deleted:
+        if reason == "NOT_FOUND":
+            return jsonify({"ok": False, "error": "Violation not found"}), 404
+        if reason == "ACTION_NOT_TAKEN":
+            return jsonify({"ok": False, "error": "Action must be Taken before deletion"}), 400
+        return jsonify({"ok": False, "error": "Failed to delete violation"}), 500
+
+    _audit("VIOLATION_DELETED", f"Violation {violation_id} deleted.")
     return jsonify({"ok": True, "report": service.get_violation_report()})
 
 

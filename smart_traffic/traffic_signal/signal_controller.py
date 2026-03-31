@@ -81,9 +81,10 @@ class SignalController:
         next_index = (self.current_side_index + 1) % len(self.sides)
         next_side = self.sides[next_index]
 
-        # GREEN → YELLOW  (only outgoing side turns yellow; next stays RED)
+        # GREEN → YELLOW  (both current *and* next side turn yellow)
         if current_state == SignalState.GREEN and elapsed >= self.green_duration:
             self.signals[self.current_side] = SignalState.YELLOW
+            self.signals[next_side] = SignalState.YELLOW
             self.yellow_pass_side = self.current_side   # outgoing side passes
             self.last_change_time = current_time
 
@@ -120,11 +121,11 @@ class SignalController:
                     self.signals[s] = SignalState.RED
             return
 
-        # Otherwise, transition:  only current → YELLOW, all others → RED
+        # Otherwise, transition:  current → YELLOW, emergency → YELLOW
         self._emergency_phase = "TRANSITION_TO"
         self.yellow_pass_side = self.current_side   # outgoing side passes
         for s in self.sides:
-            if s == self.current_side:
+            if s == self.current_side or s == side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -142,10 +143,10 @@ class SignalController:
         self._resume_green_remaining = resume_green_remaining
         self._emergency_phase = "TRANSITION_BACK"
 
-        # Only emergency side → YELLOW, all others → RED
+        # Emergency side → YELLOW, resume side → YELLOW (get-ready)
         self.yellow_pass_side = self._emergency_side
         for s in self.sides:
-            if s == self._emergency_side:
+            if s == self._emergency_side or s == self._resume_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED

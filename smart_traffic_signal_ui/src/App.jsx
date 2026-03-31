@@ -520,7 +520,11 @@ function App() {
       )}
       {isAdmin && menuId === "audit" && <AuditTrailPanel logs={auditTrail} />}
       {isAdmin && menuId === "violations" && (
-        <ViolationsPanel report={violations} onRefresh={loadAdminPanels} />
+        <ViolationsPanel
+          report={violations}
+          onRefresh={loadAdminPanels}
+          token={token}
+        />
       )}
     </main>
   );
@@ -957,21 +961,149 @@ function AuditTrailPanel({ logs }) {
   );
 }
 
-function ViolationsPanel({ report, onRefresh }) {
+function ViolationsPanel({ report, onRefresh, token }) {
   const rows = report?.rows || [];
+  const [busyId, setBusyId] = useState(null);
+  const [panelMessage, setPanelMessage] = useState("");
+  const [panelError, setPanelError] = useState("");
+  const [sortBy, setSortBy] = useState("time_desc");
+
+  const sortedRows = useMemo(() => {
+    const getTimeValue = (value) => {
+      if (!value) {
+        return 0;
+      }
+      const parsed = new Date(value).getTime();
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    const compareText = (a, b) => String(a || "").localeCompare(String(b || ""));
+    const compareBool = (a, b) => Number(Boolean(a)) - Number(Boolean(b));
+
+    const sorted = [...rows].sort((a, b) => {
+      switch (sortBy) {
+        case "time_asc":
+          return getTimeValue(a.createdAt) - getTimeValue(b.createdAt);
+        case "time_desc":
+          return getTimeValue(b.createdAt) - getTimeValue(a.createdAt);
+        case "name_asc":
+          return compareText(a.vehicleId, b.vehicleId);
+        case "name_desc":
+          return compareText(b.vehicleId, a.vehicleId);
+        case "action_taken_first": {
+          const takenOrder = compareBool(b.actionTaken, a.actionTaken);
+          if (takenOrder !== 0) {
+            return takenOrder;
+          }
+          return getTimeValue(b.createdAt) - getTimeValue(a.createdAt);
+        }
+        case "action_not_taken_first": {
+          const notTakenOrder = compareBool(a.actionTaken, b.actionTaken);
+          if (notTakenOrder !== 0) {
+            return notTakenOrder;
+          }
+          return getTimeValue(b.createdAt) - getTimeValue(a.createdAt);
+        }
+        case "type_asc":
+          return compareText(a.vehicleType, b.vehicleType);
+        case "side_asc":
+          return compareText(a.side, b.side);
+        case "violation_asc":
+          return compareText(a.violationType, b.violationType);
+        case "id_desc":
+          return Number(b.id || 0) - Number(a.id || 0);
+        case "id_asc":
+          return Number(a.id || 0) - Number(b.id || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }, [rows, sortBy]);
+
+  const updateActionStatus = async (violationId, nextValue) => {
+    setBusyId(violationId);
+    setPanelMessage("");
+    setPanelError("");
+
+    try {
+      await fetchJson(`${API_BASE}/violations/${violationId}/action`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ actionTaken: nextValue === "taken" }),
+      });
+      await onRefresh();
+      setPanelMessage(`Violation ${violationId} action updated.`);
+    } catch (err) {
+      setPanelError(err.message || "Failed to update action status.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteViolation = async (violationId) => {
+    setBusyId(violationId);
+    setPanelMessage("");
+    setPanelError("");
+
+    try {
+      await fetchJson(`${API_BASE}/violations/${violationId}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      await onRefresh();
+      setPanelMessage(`Violation ${violationId} deleted.`);
+    } catch (err) {
+      setPanelError(err.message || "Failed to delete violation.");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <section className="rounded-3xl border border-white/10 bg-slate-900/60 p-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="title-font text-lg text-slate-100">Violation Reports</h2>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded-lg bg-slate-700 px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-100 hover:bg-slate-600"
-        >
-          Refresh Report
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] uppercase tracking-[0.16em] text-slate-300">
+            Sort By
+          </label>
+          <select
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+          >
+            <option value="time_desc">Time (Newest First)</option>
+            <option value="time_asc">Time (Oldest First)</option>
+            <option value="name_asc">Name (A-Z)</option>
+            <option value="name_desc">Name (Z-A)</option>
+            <option value="action_taken_first">Action (Taken First)</option>
+            <option value="action_not_taken_first">Action (Not Taken First)</option>
+            <option value="type_asc">Vehicle Type</option>
+            <option value="side_asc">Side</option>
+            <option value="violation_asc">Violation Type</option>
+            <option value="id_desc">ID (High-Low)</option>
+            <option value="id_asc">ID (Low-High)</option>
+          </select>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="rounded-lg bg-slate-700 px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-100 hover:bg-slate-600"
+          >
+            Refresh Report
+          </button>
+        </div>
       </div>
+
+      {panelMessage && <p className="mt-3 text-sm text-emerald-300">{panelMessage}</p>}
+      {panelError && <p className="mt-3 text-sm text-rose-300">{panelError}</p>}
 
       {!report && <p className="mt-3 text-slate-300">Loading report data...</p>}
 
@@ -1005,33 +1137,59 @@ function ViolationsPanel({ report, onRefresh }) {
                     <th className="px-3 py-2">Violation</th>
                     <th className="px-3 py-2">In Middle</th>
                     <th className="px-3 py-2">Out Middle</th>
+                    <th className="px-3 py-2">Action Taken</th>
                     <th className="px-3 py-2">Created At</th>
+                    <th className="px-3 py-2">Delete</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-t border-slate-700/60 bg-slate-900/70 text-slate-200"
-                    >
-                      <td className="px-3 py-2">{row.id}</td>
-                      <td className="px-3 py-2">{row.vehicleId}</td>
-                      <td className="px-3 py-2">{row.vehicleType}</td>
-                      <td className="px-3 py-2">{row.side}</td>
-                      <td className="px-3 py-2">{row.violationType}</td>
-                      <td className="px-3 py-2">
-                        {row.inMiddle ? "Yes" : "No"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {row.outMiddle ? "Yes" : "No"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {row.createdAt
-                          ? new Date(row.createdAt).toLocaleString()
-                          : "-"}
-                      </td>
-                    </tr>
-                  ))}
+                  {sortedRows.map((row) => {
+                    const isTaken = Boolean(row.actionTaken);
+                    const rowBusy = busyId === row.id;
+
+                    return (
+                      <tr
+                        key={row.id}
+                        className="border-t border-slate-700/60 bg-slate-900/70 text-slate-200"
+                      >
+                        <td className="px-3 py-2">{row.id}</td>
+                        <td className="px-3 py-2">{row.vehicleId}</td>
+                        <td className="px-3 py-2">{row.vehicleType}</td>
+                        <td className="px-3 py-2">{row.side}</td>
+                        <td className="px-3 py-2">{row.violationType}</td>
+                        <td className="px-3 py-2">{row.inMiddle ? "Yes" : "No"}</td>
+                        <td className="px-3 py-2">{row.outMiddle ? "Yes" : "No"}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={isTaken ? "taken" : "not_taken"}
+                            disabled={rowBusy}
+                            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs"
+                            onChange={(event) =>
+                              updateActionStatus(row.id, event.target.value)
+                            }
+                          >
+                            <option value="not_taken">Not Taken</option>
+                            <option value="taken">Taken</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          {row.createdAt
+                            ? new Date(row.createdAt).toLocaleString()
+                            : "-"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            disabled={rowBusy || !isTaken}
+                            onClick={() => deleteViolation(row.id)}
+                            className="rounded-md bg-rose-500/20 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

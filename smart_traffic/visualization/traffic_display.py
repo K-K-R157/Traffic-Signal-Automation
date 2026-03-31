@@ -141,10 +141,12 @@ class TrafficDisplay:
         intersection.set_window_size(self.width, self.height)
         self.screen.fill(config.COLOR_BACKGROUND)
 
-        self._draw_title()
+        self._draw_nature_decor()
         self._draw_roads()
+        self._draw_lane_direction_labels()
         self._draw_signals(intersection.signal_controller)
         self._draw_vehicles(intersection.get_all_vehicles())
+        self._draw_title()
         self._draw_statistics(intersection)
         self._draw_controls()
         self._draw_emergency_indicator(intersection)
@@ -156,10 +158,51 @@ class TrafficDisplay:
     #  Title
     # ------------------------------------------------------------------ #
     def _draw_title(self):
+        # Keep title in top-left corner to avoid road overlap.
         title = self.font_large.render(
             "Smart Traffic Signal Simulation", True, config.COLOR_TEXT
         )
-        self.screen.blit(title, (self.width // 2 - title.get_width() // 2, 20))
+        bg = pygame.Surface((title.get_width() + 24, title.get_height() + 14), pygame.SRCALPHA)
+        bg.fill((10, 15, 25, 180))
+        x, y = 18, 16
+        self.screen.blit(bg, (x - 10, y - 6))
+        self.screen.blit(title, (x, y))
+
+    # ------------------------------------------------------------------ #
+    #  Environment decor
+    # ------------------------------------------------------------------ #
+    def _draw_nature_decor(self):
+        """Draw subtle natural elements (trees/grass) in safe corner zones."""
+        cx, cy = self.width // 2, self.height // 2
+        rw2 = config.ROAD_WIDTH // 2
+
+        # Corner grass pads (stay outside road corridors)
+        pads = [
+            pygame.Rect(10, 10, max(120, cx - rw2 - 30), max(90, cy - rw2 - 30)),
+            pygame.Rect(cx + rw2 + 20, 10, max(120, self.width - (cx + rw2 + 30)), max(90, cy - rw2 - 30)),
+            pygame.Rect(10, cy + rw2 + 20, max(120, cx - rw2 - 30), max(90, self.height - (cy + rw2 + 30))),
+            pygame.Rect(cx + rw2 + 20, cy + rw2 + 20, max(120, self.width - (cx + rw2 + 30)), max(90, self.height - (cy + rw2 + 30))),
+        ]
+        for r in pads:
+            if r.width > 30 and r.height > 30:
+                pygame.draw.rect(self.screen, (42, 68, 52), r, border_radius=18)
+
+        # Simple tree icons in corners
+        trees = [
+            (40, 70), (120, 55),
+            (self.width - 45, 70), (self.width - 120, 52),
+            (48, self.height - 95), (130, self.height - 75),
+            (self.width - 48, self.height - 95), (self.width - 130, self.height - 78),
+        ]
+        for tx, ty in trees:
+            self._draw_tree(tx, ty)
+
+    def _draw_tree(self, x, y):
+        trunk = pygame.Rect(x - 4, y + 10, 8, 16)
+        pygame.draw.rect(self.screen, (110, 78, 40), trunk, border_radius=2)
+        pygame.draw.circle(self.screen, (55, 130, 70), (x, y), 14)
+        pygame.draw.circle(self.screen, (70, 150, 85), (x - 8, y + 2), 10)
+        pygame.draw.circle(self.screen, (70, 150, 85), (x + 8, y + 1), 9)
 
     # ------------------------------------------------------------------ #
     #  Roads & markings
@@ -167,9 +210,10 @@ class TrafficDisplay:
     def _draw_roads(self):
         cx = self.width // 2
         cy = self.height // 2
-        scale = min(self.width / 1400, self.height / 850)
-        scale = max(0.6, min(scale, 1.5))
-        rw = int(config.ROAD_WIDTH * scale)
+        # Keep road geometry fixed to simulation coordinates so vehicle
+        # lanes, stop-lines, and signal logic stay perfectly aligned
+        # across fullscreen and windowed modes.
+        rw = config.ROAD_WIDTH
 
         # vertical road
         pygame.draw.rect(self.screen, config.COLOR_ROAD,
@@ -178,7 +222,34 @@ class TrafficDisplay:
         pygame.draw.rect(self.screen, config.COLOR_ROAD,
                          (0, cy - rw // 2, self.width, rw))
 
+        self._draw_road_edge_highlights(cx, cy, rw)
         self._draw_road_markings(cx, cy, rw)
+        self._draw_zebra_crossings(cx, cy, rw)
+        self._draw_lane_arrows(cx, cy)
+
+    def _draw_road_edge_highlights(self, cx, cy, rw):
+        """Add subtle edge lines so roads look cleaner and more realistic."""
+        edge = (110, 110, 110)
+        shadow = (45, 45, 45)
+        # vertical road edges
+        pygame.draw.line(self.screen, edge, (cx - rw // 2, 0),
+                         (cx - rw // 2, self.height), 2)
+        pygame.draw.line(self.screen, edge, (cx + rw // 2, 0),
+                         (cx + rw // 2, self.height), 2)
+        pygame.draw.line(self.screen, shadow, (cx - rw // 2 + 3, 0),
+                         (cx - rw // 2 + 3, self.height), 1)
+        pygame.draw.line(self.screen, shadow, (cx + rw // 2 - 3, 0),
+                         (cx + rw // 2 - 3, self.height), 1)
+
+        # horizontal road edges
+        pygame.draw.line(self.screen, edge, (0, cy - rw // 2),
+                         (self.width, cy - rw // 2), 2)
+        pygame.draw.line(self.screen, edge, (0, cy + rw // 2),
+                         (self.width, cy + rw // 2), 2)
+        pygame.draw.line(self.screen, shadow, (0, cy - rw // 2 + 3),
+                         (self.width, cy - rw // 2 + 3), 1)
+        pygame.draw.line(self.screen, shadow, (0, cy + rw // 2 - 3),
+                         (self.width, cy + rw // 2 - 3), 1)
 
     def _draw_road_markings(self, cx, cy, rw):
         dash, gap, lw = 30, 20, 4
@@ -212,6 +283,83 @@ class TrafficDisplay:
         # west stop line (top half — LHT)
         pygame.draw.line(self.screen, config.COLOR_ROAD_MARKING,
                          (cx - sl, cy - half), (cx - sl, cy), slw)
+
+    def _draw_zebra_crossings(self, cx, cy, rw):
+        """Draw zebra crossings near stop-lines on all approaches."""
+        sl = config.STOP_LINE_OFFSET
+        stripe = (245, 245, 245)
+
+        stripe_w = 9
+        stripe_h = 24
+        gap = 8
+        count = 8
+
+        # North and south crossings (horizontal stripes)
+        start_x = cx - (count * (stripe_w + gap)) // 2
+        y_north = cy - sl + 14
+        y_south = cy + sl - 14 - stripe_h
+        for i in range(count):
+            x = start_x + i * (stripe_w + gap)
+            pygame.draw.rect(self.screen, stripe,
+                             (x, y_north, stripe_w, stripe_h), border_radius=2)
+            pygame.draw.rect(self.screen, stripe,
+                             (x, y_south, stripe_w, stripe_h), border_radius=2)
+
+        # East and west crossings (vertical stripes)
+        start_y = cy - (count * (stripe_w + gap)) // 2
+        x_east = cx + sl - 14 - stripe_h
+        x_west = cx - sl + 14
+        for i in range(count):
+            y = start_y + i * (stripe_w + gap)
+            pygame.draw.rect(self.screen, stripe,
+                             (x_east, y, stripe_h, stripe_w), border_radius=2)
+            pygame.draw.rect(self.screen, stripe,
+                             (x_west, y, stripe_h, stripe_w), border_radius=2)
+
+    def _draw_lane_arrows(self, cx, cy):
+        """Draw directional arrows on incoming lanes."""
+        sl = config.STOP_LINE_OFFSET
+        lo = config.LANE_OFFSET
+        color = (230, 230, 230)
+
+        # Incoming lane centers for LHT
+        self._draw_arrow((cx + lo, cy - sl - 48), "DOWN", color)   # NORTH lane
+        self._draw_arrow((cx - lo, cy + sl + 48), "UP", color)     # SOUTH lane
+        self._draw_arrow((cx + sl + 48, cy + lo), "LEFT", color)   # EAST lane
+        self._draw_arrow((cx - sl - 48, cy - lo), "RIGHT", color)  # WEST lane
+
+    def _draw_arrow(self, center, direction, color):
+        """Draw a simple filled lane arrow."""
+        x, y = center
+        shaft_w, shaft_h = 8, 24
+        head = 10
+
+        if direction == "UP":
+            pygame.draw.rect(self.screen, color,
+                             (x - shaft_w // 2, y - shaft_h // 2, shaft_w, shaft_h))
+            pts = [(x, y - shaft_h // 2 - head),
+                   (x - head, y - shaft_h // 2 + 2),
+                   (x + head, y - shaft_h // 2 + 2)]
+        elif direction == "DOWN":
+            pygame.draw.rect(self.screen, color,
+                             (x - shaft_w // 2, y - shaft_h // 2, shaft_w, shaft_h))
+            pts = [(x, y + shaft_h // 2 + head),
+                   (x - head, y + shaft_h // 2 - 2),
+                   (x + head, y + shaft_h // 2 - 2)]
+        elif direction == "LEFT":
+            pygame.draw.rect(self.screen, color,
+                             (x - shaft_h // 2, y - shaft_w // 2, shaft_h, shaft_w))
+            pts = [(x - shaft_h // 2 - head, y),
+                   (x - shaft_h // 2 + 2, y - head),
+                   (x - shaft_h // 2 + 2, y + head)]
+        else:  # RIGHT
+            pygame.draw.rect(self.screen, color,
+                             (x - shaft_h // 2, y - shaft_w // 2, shaft_h, shaft_w))
+            pts = [(x + shaft_h // 2 + head, y),
+                   (x + shaft_h // 2 - 2, y - head),
+                   (x + shaft_h // 2 - 2, y + head)]
+
+        pygame.draw.polygon(self.screen, color, pts)
 
     # ------------------------------------------------------------------ #
     #  Traffic signals
@@ -255,10 +403,6 @@ class TrafficDisplay:
             pygame.draw.circle(self.screen, (255, 255, 255), pos,
                                config.SIGNAL_SIZE, 3)
 
-            # side label
-            lbl = self.font_small.render(side, True, config.COLOR_TEXT)
-            self.screen.blit(lbl, (pos[0] - lbl.get_width() // 2, pos[1] - 65))
-
             # countdown timer (outside the road, never overlaps vehicles)
             remaining = sc.get_remaining_time()
             # Normal cycle: show timer for active side and next-side yellow.
@@ -278,6 +422,35 @@ class TrafficDisplay:
                                               config.COLOR_TEXT)
                 self.screen.blit(txt, (tp[0] - txt.get_width() // 2,
                                        tp[1] - txt.get_height() // 2))
+
+    def _draw_lane_direction_labels(self):
+        """Draw NORTH/SOUTH/EAST/WEST around the center square (one per side)."""
+        cx = self.width // 2
+        cy = self.height // 2
+        # Use a virtual square around the intersection center and place
+        # one direction name on each side, well away from zebra crossings.
+        pad = config.ROAD_WIDTH // 2 + 42
+
+        text_color = (238, 242, 248)
+        bg_color = (10, 15, 25, 170)
+
+        labels = [
+            ("NORTH", (cx, cy - pad), 0),
+            ("SOUTH", (cx, cy + pad), 0),
+            ("EAST",  (cx + pad, cy), 0),
+            ("WEST",  (cx - pad, cy), 0),
+        ]
+
+        for text, (lx, ly), angle in labels:
+            surf = self.font_small.render(text, True, text_color)
+            if angle != 0:
+                surf = pygame.transform.rotate(surf, angle)
+
+            rect = surf.get_rect(center=(lx, ly))
+            bg = pygame.Surface((rect.width + 10, rect.height + 6), pygame.SRCALPHA)
+            bg.fill(bg_color)
+            self.screen.blit(bg, (rect.x - 5, rect.y - 3))
+            self.screen.blit(surf, rect)
 
     # ------------------------------------------------------------------ #
     #  Vehicles (photo images + license plates)
@@ -316,23 +489,24 @@ class TrafficDisplay:
     #  Statistics panel
     # ------------------------------------------------------------------ #
     def _draw_statistics(self, intersection):
-        px, py = 20, 100
-        pw, ph = 350, 380
+        # Compact card in top-left corner to avoid center-road overlap.
+        px, py = 18, 76
+        pw, ph = 350, 210
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-        panel.fill((20, 20, 20, 200))
+        panel.fill((20, 20, 20, 185))
         self.screen.blit(panel, (px, py))
 
-        y = py + 15
+        y = py + 12
         t = self.font_medium.render("Statistics", True, config.COLOR_TEXT)
         self.screen.blit(t, (px + 15, y))
-        y += 45
+        y += 34
 
         self.screen.blit(
             self.font_small.render("Vehicles Waiting:",
                                    True, config.COLOR_TEXT),
             (px + 15, y)
         )
-        y += 30
+        y += 24
 
         for side in ("NORTH", "SOUTH", "EAST", "WEST"):
             cnt = intersection.get_vehicle_count(side)
@@ -345,16 +519,16 @@ class TrafficDisplay:
                 c = config.COLOR_SIGNAL_RED
             lbl = self.font_small.render(f"  {side}: {cnt}", True, c)
             self.screen.blit(lbl, (px + 20, y))
-            y += 28
+            y += 21
 
-        y += 15
+        y += 8
         total = intersection.get_total_vehicle_count()
         self.screen.blit(
             self.font_small.render(
                 f"Total Active: {total}", True, config.COLOR_TEXT),
             (px + 15, y)
         )
-        y += 35
+        y += 24
 
         crossed = intersection.total_vehicles_crossed
         self.screen.blit(
@@ -362,31 +536,29 @@ class TrafficDisplay:
                                    config.COLOR_TEXT),
             (px + 15, y)
         )
-        y += 30
+        y += 22
 
-        self.screen.blit(
-            self.font_small.render(
-                "Crossed by Type:", True, config.COLOR_TEXT),
-            (px + 15, y)
+        c = intersection.vehicles_crossed_by_type.get("CAR", 0)
+        tcnt = intersection.vehicles_crossed_by_type.get("TRUCK", 0)
+        a = intersection.vehicles_crossed_by_type.get("AMBULANCE", 0)
+        compact = self.font_small.render(
+            f"C:{c}  T:{tcnt}  A:{a}", True, (180, 220, 255)
         )
-        y += 28
-
-        type_colors = {"CAR": (0, 180, 255), "TRUCK": (0, 200, 120),
-                       "AMBULANCE": (255, 100, 100)}
-        for vt, clr in type_colors.items():
-            cnt = intersection.vehicles_crossed_by_type.get(vt, 0)
-            lbl = self.font_small.render(f"  {vt}: {cnt}", True, clr)
-            self.screen.blit(lbl, (px + 20, y))
-            y += 28
+        self.screen.blit(compact, (px + 15, y))
 
     # ------------------------------------------------------------------ #
     #  Controls footer
     # ------------------------------------------------------------------ #
     def _draw_controls(self):
-        txt = "Controls: ESC or Q - Exit  |  F - Toggle Fullscreen  |  Drag window edges to resize"
+        txt = "ESC/Q: Exit  |  F: Fullscreen  |  Drag edges to resize"
         lbl = self.font_small.render(txt, True, config.COLOR_TEXT)
-        self.screen.blit(lbl, (self.width // 2 - lbl.get_width() // 2,
-                               self.height - 40))
+        # Bottom-right corner placement to keep roads clear.
+        x = self.width - lbl.get_width() - 18
+        y = self.height - lbl.get_height() - 14
+        bg = pygame.Surface((lbl.get_width() + 14, lbl.get_height() + 8), pygame.SRCALPHA)
+        bg.fill((10, 15, 25, 160))
+        self.screen.blit(bg, (x - 7, y - 4))
+        self.screen.blit(lbl, (x, y))
 
     # ------------------------------------------------------------------ #
     #  Emergency indicator

@@ -310,7 +310,15 @@ class Vehicle:
         tx, ty = self.waypoints[self.wp_index]
         dx, dy = tx - self.x, ty - self.y
         if abs(dx) > 0.01 or abs(dy) > 0.01:
-            self.angle = math.degrees(math.atan2(dy, dx))
+            # Keep heading changes continuous using the shortest angular delta.
+            # This avoids visual 270-degree spins when crossing ±180 degrees.
+            target = math.degrees(math.atan2(dy, dx))
+            if not hasattr(self, "_angle_initialized"):
+                self.angle = target
+                self._angle_initialized = True
+            else:
+                delta = (target - self.angle + 180) % 360 - 180
+                self.angle += delta
 
     def should_log_violation(self, cx, cy) -> bool:
         """Return True if this vehicle should log a side-lane violation."""

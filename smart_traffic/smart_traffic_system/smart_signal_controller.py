@@ -88,10 +88,11 @@ class SmartSignalController:
         queued_now = queued_counts.get(self.current_side, 0)
         can_switch_early = (queued_now == 0)
 
-        # GREEN → YELLOW  (only outgoing side turns yellow; next stays RED)
+        # GREEN → YELLOW  (both current *and* next side turn yellow)
         if (current_state == SignalState.GREEN and
                 (elapsed >= self.green_duration or can_switch_early)):
             self.signals[self.current_side] = SignalState.YELLOW
+            self.signals[next_side] = SignalState.YELLOW
             self.yellow_pass_side = self.current_side   # outgoing side passes
             self.last_change_time = current_time
 
@@ -121,12 +122,11 @@ class SmartSignalController:
                     self.signals[s] = SignalState.RED
             return
 
-        # Otherwise, transition: current -> YELLOW, emergency side stays RED
-        # until transition completes. This keeps one clearly active approach.
+        # Otherwise, transition:  current → YELLOW, emergency → YELLOW
         self._emergency_phase = "TRANSITION_TO"
         self.yellow_pass_side = self.current_side   # outgoing side passes
         for s in self.sides:
-            if s == self.current_side:
+            if s == self.current_side or s == side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED
@@ -138,11 +138,10 @@ class SmartSignalController:
         self._resume_green_remaining = resume_green_remaining
         self._emergency_phase = "TRANSITION_BACK"
 
-        # Emergency side -> YELLOW while all other sides remain RED
-        # until we return to the resumed GREEN side.
+        # Emergency side → YELLOW, resume side → YELLOW (get-ready)
         self.yellow_pass_side = self._emergency_side
         for s in self.sides:
-            if s == self._emergency_side:
+            if s == self._emergency_side or s == self._resume_side:
                 self.signals[s] = SignalState.YELLOW
             else:
                 self.signals[s] = SignalState.RED

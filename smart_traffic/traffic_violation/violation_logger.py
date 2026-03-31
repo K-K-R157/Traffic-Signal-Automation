@@ -51,10 +51,22 @@ class TrafficViolationLogger:
                 violation_type VARCHAR(32) NOT NULL,
                 in_middle TINYINT(1) NOT NULL,
                 out_middle TINYINT(1) NOT NULL,
+                action_taken TINYINT(1) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        try:
+            self._cursor.execute(
+                """
+                ALTER TABLE traffic_violations
+                ADD COLUMN action_taken TINYINT(1) NOT NULL DEFAULT 0
+                """
+            )
+        except Exception as exc:
+            # Ignore duplicate-column errors to support existing schemas.
+            if "Duplicate column name" not in str(exc):
+                raise
         self._conn.commit()
 
     def log_violation(self, vehicle):

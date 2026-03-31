@@ -23,7 +23,7 @@ YELLOW_LIGHT_DURATION = 4
 SPAWN_INTERVAL_MIN = 2.0        # Min seconds between spawns per side
 SPAWN_INTERVAL_MAX = 4.0        # Max seconds between spawns per side
 MAX_VEHICLES_PER_SIDE = 8
-GREEN_START_DELAY = 1.0         # Seconds to wait after green before vehicles move
+GREEN_START_DELAY = 2.0         # Seconds to wait after green before vehicles move
 
 # ========================
 # Vehicle Properties
@@ -39,9 +39,9 @@ VEHICLE_DISPLAY_SIZES = {
 
 # Vehicle type spawn probabilities (must sum to 1.0)
 VEHICLE_PROBABILITIES = {
-    'CAR': 0.65,
+    'CAR': 0.67,
     'TRUCK': 0.28,
-    'AMBULANCE': 0.07
+    'AMBULANCE': 0.05
 }
 
 # Vehicle image files (inside photo/ folder)
@@ -126,7 +126,7 @@ EMERGENCY_DETECTION_DISTANCE = 350
 # ========================
 # Traffic Violation Settings
 # ========================
-SIDE_LANE_VIOLATION_RATE = 0.02     # 1 in 50 vehicles (cars/trucks only)
+SIDE_LANE_VIOLATION_RATE = 0.015    # ~1 in 67 vehicles (cars/trucks only)
 
 # ========================
 # MySQL Settings (Traffic Violations)
@@ -135,4 +135,5 @@ DB_HOST = "localhost"
 DB_PORT = 3306
 DB_NAME = "smart_traffic_db"
 DB_USER = "root"
-DB_PASSWORD = "123Candle123@"
+# DB_PASSWORD = "123Candle123@"
+DB_PASSWORD = "Gajendra_8700"

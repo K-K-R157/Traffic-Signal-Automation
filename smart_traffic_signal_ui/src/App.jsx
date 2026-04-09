@@ -3,7 +3,8 @@ import { io } from "socket.io-client";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000/api";
-const SOCKET_BASE = API_BASE.replace(/\/api\/?$/, "");
+const SOCKET_BASE =
+  import.meta.env.VITE_SOCKET_BASE_URL || API_BASE.replace(/\/api\/?$/, "");
 const SIDES = ["NORTH", "EAST", "SOUTH", "WEST"];
 
 const SIGNAL_COLORS = {
@@ -263,7 +264,7 @@ function App() {
 
     return () => {
       socketRef.current = null;
-      socket.disconnect(); 
+      socket.disconnect();
     };
   }, [token, user]);
 
@@ -977,7 +978,8 @@ function ViolationsPanel({ report, onRefresh, token }) {
       return Number.isNaN(parsed) ? 0 : parsed;
     };
 
-    const compareText = (a, b) => String(a || "").localeCompare(String(b || ""));
+    const compareText = (a, b) =>
+      String(a || "").localeCompare(String(b || ""));
     const compareBool = (a, b) => Number(Boolean(a)) - Number(Boolean(b));
 
     const sorted = [...rows].sort((a, b) => {
@@ -1085,7 +1087,9 @@ function ViolationsPanel({ report, onRefresh, token }) {
             <option value="name_asc">Name (A-Z)</option>
             <option value="name_desc">Name (Z-A)</option>
             <option value="action_taken_first">Action (Taken First)</option>
-            <option value="action_not_taken_first">Action (Not Taken First)</option>
+            <option value="action_not_taken_first">
+              Action (Not Taken First)
+            </option>
             <option value="type_asc">Vehicle Type</option>
             <option value="side_asc">Side</option>
             <option value="violation_asc">Violation Type</option>
@@ -1102,7 +1106,9 @@ function ViolationsPanel({ report, onRefresh, token }) {
         </div>
       </div>
 
-      {panelMessage && <p className="mt-3 text-sm text-emerald-300">{panelMessage}</p>}
+      {panelMessage && (
+        <p className="mt-3 text-sm text-emerald-300">{panelMessage}</p>
+      )}
       {panelError && <p className="mt-3 text-sm text-rose-300">{panelError}</p>}
 
       {!report && <p className="mt-3 text-slate-300">Loading report data...</p>}
@@ -1157,8 +1163,12 @@ function ViolationsPanel({ report, onRefresh, token }) {
                         <td className="px-3 py-2">{row.vehicleType}</td>
                         <td className="px-3 py-2">{row.side}</td>
                         <td className="px-3 py-2">{row.violationType}</td>
-                        <td className="px-3 py-2">{row.inMiddle ? "Yes" : "No"}</td>
-                        <td className="px-3 py-2">{row.outMiddle ? "Yes" : "No"}</td>
+                        <td className="px-3 py-2">
+                          {row.inMiddle ? "Yes" : "No"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {row.outMiddle ? "Yes" : "No"}
+                        </td>
                         <td className="px-3 py-2">
                           <select
                             value={isTaken ? "taken" : "not_taken"}

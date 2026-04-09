@@ -135,5 +135,5 @@ DB_HOST = "localhost"
 DB_PORT = 3306
 DB_NAME = "smart_traffic_db"
 DB_USER = "root"
-# DB_PASSWORD = "123Candle123@"
-DB_PASSWORD = "Gajendra_8700"
+DB_PASSWORD = "123Candle123@"
+# DB_PASSWORD = "Gajendra_8700"

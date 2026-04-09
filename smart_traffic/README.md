@@ -31,7 +31,7 @@ python main.py
 
 ```bash
 cd smart_traffic
-pip install flask
+pip install -r requirements.txt
 python api_server.py
 ```
 
@@ -44,6 +44,31 @@ API server starts on `http://127.0.0.1:5000` and exposes:
 - `POST /api/control/timings` - update green/yellow timings
 - `POST /api/control/manual-override` - force one side GREEN
 - `POST /api/control/emergency` - trigger emergency priority by side
+
+## Environment Variables
+
+Create `.env` from `.env.example` in `smart_traffic/`:
+
+```bash
+copy .env.example .env
+```
+
+Important keys:
+
+- `API_HOST`, `API_PORT`, `API_DEBUG`
+- `ALLOWED_ORIGIN` (set this to your Vercel frontend URL in production)
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `SESSION_TIMEOUT_SECONDS`
+
+For Azure App Service, the app also supports `PORT` automatically.
+
+## Azure Deployment Notes
+
+1. Deploy `smart_traffic/` as the app root.
+2. Ensure startup command runs the server, for example: `python api_server.py`.
+3. Set App Settings for all required env vars (especially DB and `ALLOWED_ORIGIN`).
+4. If your Azure MySQL is remote, allow outbound connection and whitelist Azure IPs/firewall.
+5. Keep `API_DEBUG=false` in production.
 
 ## Controls
 

@@ -17,7 +17,7 @@ from flask_socketio import SocketIO, emit
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
-from smart_traffic_system import SmartIntersection, SmartSignalController 
+from smart_traffic_system import SmartIntersection, SmartSignalController
 from traffic_signal.signal_state import SignalState
 from visualization import TrafficDisplay
 
@@ -30,7 +30,6 @@ else:
 
 
 SIDES = ["NORTH", "EAST", "SOUTH", "WEST"]
-SESSION_TIMEOUT_SECONDS = 15 * 60
 SIGNUP_ROLE_ALIASES = {
     "ADMIN": "SYSTEM_ADMIN",
     "SYSTEM_ADMIN": "SYSTEM_ADMIN",
@@ -649,7 +648,7 @@ class SimulationService:
             return None
 
         now = time.time()
-        if now - session["lastSeen"] > SESSION_TIMEOUT_SECONDS:
+        if now - session["lastSeen"] > config.SESSION_TIMEOUT_SECONDS:
             self._sessions.pop(token, None)
             return None
 
@@ -707,7 +706,11 @@ class SimulationService:
 
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=config.ALLOWED_ORIGIN,
+    async_mode="threading",
+)
 service = SimulationService(socketio)
 
 
@@ -766,7 +769,7 @@ def _audit(action: str, details: str):
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Origin"] = config.ALLOWED_ORIGIN
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
@@ -979,7 +982,8 @@ def update_violation_action(violation_id: int):
     elif isinstance(raw_value, (int, float)):
         action_taken = bool(raw_value)
     elif isinstance(raw_value, str):
-        action_taken = raw_value.strip().lower() in {"1", "true", "yes", "taken"}
+        action_taken = raw_value.strip().lower() in {
+            "1", "true", "yes", "taken"}
     else:
         return jsonify({"ok": False, "error": "actionTaken is required"}), 400
 
@@ -1125,7 +1129,12 @@ def control_emergency():
 
 
 def main():
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    socketio.run(
+        app,
+        host=config.API_HOST,
+        port=config.API_PORT,
+        debug=config.API_DEBUG,
+    )
 
 
 atexit.register(service.shutdown)

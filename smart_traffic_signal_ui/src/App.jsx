@@ -197,7 +197,6 @@ function App() {
       });
       setBackendUiMessage(payload.message || "Simulation UI launch requested.");
       setError("");
-      // Immediately sync state to pick up backendUiRunning and vehicle data
       await syncState();
     } catch (err) {
       setBackendUiMessage("");
@@ -231,7 +230,8 @@ function App() {
     }
 
     const socket = io(SOCKET_BASE, {
-      transports: ["websocket", "polling"],
+      transports: ["polling"],
+      upgrade: false,
       auth: { token },
     });
     socketRef.current = socket;
@@ -356,7 +356,6 @@ function App() {
             {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
-
         {backendUiMessage && (
           <p className="mt-3 text-sm text-emerald-300">{backendUiMessage}</p>
         )}

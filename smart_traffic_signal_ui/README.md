@@ -61,4 +61,4 @@ Set these values:
   - Audit Trail
   - Violation Reports
 - Direct manipulation operator screen for live intersection controls.
-- Open Backend UI button (opens `http://127.0.0.1:5000`).
+- Open Simulation Page button (opens browser route `#/simulation` in a new tab).

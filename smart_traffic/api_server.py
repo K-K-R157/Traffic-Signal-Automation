@@ -19,7 +19,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import config
 from smart_traffic_system import SmartIntersection, SmartSignalController
 from traffic_signal.signal_state import SignalState
-from visualization import TrafficDisplay
 
 try:
     import mysql.connector
@@ -491,6 +490,7 @@ class SimulationService:
     def _display_loop(self):
         display = None
         try:
+            from visualization import TrafficDisplay
             display = TrafficDisplay()
             self._log("Shared simulation UI window opened.")
 
@@ -500,12 +500,21 @@ class SimulationService:
 
                 with self._lock:
                     display.draw(self.intersection)
+        except Exception as exc:  # pragma: no cover - display is environment-specific
+            self._log(f"Desktop UI could not start: {exc}")
         finally:
             if display is not None:
                 display.cleanup()
             self._log("Shared simulation UI window closed.")
 
     def launch_backend_ui(self) -> dict[str, Any]:
+        if not config.ENABLE_DESKTOP_SIM_UI:
+            return {
+                "ok": False,
+                "alreadyRunning": False,
+                "message": "Desktop simulation UI is disabled in this environment.",
+            }
+
         if self._display_thread and self._display_thread.is_alive():
             return {
                 "ok": True,

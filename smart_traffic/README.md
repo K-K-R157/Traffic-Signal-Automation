@@ -35,6 +35,14 @@ pip install -r requirements.txt
 python api_server.py
 ```
 
+The deployed backend is API-first and serves browser-based simulation data. It does not open a desktop pygame window on Azure.
+
+For optional local desktop simulation UI support, install:
+
+```bash
+pip install -r requirements-desktop.txt
+```
+
 API server starts on `http://127.0.0.1:5000` and exposes:
 
 - `GET /api/state` - live simulation state
@@ -59,6 +67,7 @@ Important keys:
 - `ALLOWED_ORIGIN` (set this to your Vercel frontend URL in production)
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `SESSION_TIMEOUT_SECONDS`
+- `ENABLE_DESKTOP_SIM_UI` (`false` for cloud, `true` only for local desktop UI usage)
 
 For Azure App Service, the app also supports `PORT` automatically.
 
@@ -69,6 +78,7 @@ For Azure App Service, the app also supports `PORT` automatically.
 3. Set App Settings for all required env vars (especially DB and `ALLOWED_ORIGIN`).
 4. If your Azure MySQL is remote, allow outbound connection and whitelist Azure IPs/firewall.
 5. Keep `API_DEBUG=false` in production.
+6. Keep `ENABLE_DESKTOP_SIM_UI=false` in Azure.
 
 ## Controls
 

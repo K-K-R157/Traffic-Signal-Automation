@@ -2,14 +2,35 @@
 
 import os
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, ".env")
+
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover
     load_dotenv = None
 
 
+def _load_env_file_fallback(path: str):
+    if not os.path.exists(path):
+        return
+
+    with open(path, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ[key] = value
+
+
 if load_dotenv is not None:
-    load_dotenv()
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
+else:
+    _load_env_file_fallback(ENV_PATH)
 
 
 def _env_str(name: str, default: str) -> str:
@@ -47,7 +68,6 @@ def _env_bool(name: str, default: bool) -> bool:
 # ========================
 # Paths
 # ========================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PHOTO_DIR = os.path.join(BASE_DIR, 'photo')
 
 # ========================
@@ -191,3 +211,4 @@ API_PORT = _env_int("API_PORT", _env_int("PORT", 5000))
 API_DEBUG = _env_bool("API_DEBUG", False)
 ALLOWED_ORIGIN = _env_str("ALLOWED_ORIGIN", "*")
 SESSION_TIMEOUT_SECONDS = _env_int("SESSION_TIMEOUT_SECONDS", 15 * 60)
+ENABLE_DESKTOP_SIM_UI = _env_bool("ENABLE_DESKTOP_SIM_UI", False)

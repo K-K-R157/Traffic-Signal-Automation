@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import logging
 import threading
 import time
 import uuid
@@ -577,6 +578,7 @@ class SimulationService:
             },
             "events": list(self.events),
             "timestamp": now,
+            "backendUiEnabled": bool(config.ENABLE_DESKTOP_SIM_UI),
             "backendUiRunning": self._display_thread is not None and self._display_thread.is_alive(),
             "vehicles": self._get_vehicles_locked(),
         }
@@ -719,8 +721,16 @@ socketio = SocketIO(
     app,
     cors_allowed_origins=config.ALLOWED_ORIGIN,
     async_mode="threading",
+    logger=not config.QUIET_HTTP_LOGS,
+    engineio_logger=not config.QUIET_HTTP_LOGS,
 )
 service = SimulationService(socketio)
+
+
+if config.QUIET_HTTP_LOGS:
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    logging.getLogger("engineio").setLevel(logging.ERROR)
+    logging.getLogger("socketio").setLevel(logging.ERROR)
 
 
 def _extract_token() -> str | None:

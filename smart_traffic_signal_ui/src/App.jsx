@@ -27,6 +27,7 @@ const EMPTY_STATE = {
   crossedByType: { CAR: 0, TRUCK: 0, AMBULANCE: 0 },
   emergency: { active: false, side: null, queue: 0, remaining: 0 },
   events: [],
+  backendUiEnabled: true,
   backendUiRunning: false,
   vehicles: [],
 };
@@ -318,8 +319,14 @@ function App() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="rounded-lg bg-slate-700 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-100 hover:bg-slate-600"
+              className="rounded-lg bg-slate-700 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-100 hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={openBackendUi}
+              disabled={!state.backendUiEnabled || loading}
+              title={
+                state.backendUiEnabled
+                  ? "Open local desktop simulation window"
+                  : "Desktop simulation is disabled in backend environment"
+              }
             >
               Open Backend UI
             </button>
@@ -345,6 +352,11 @@ function App() {
           {state.backendUiRunning && (
             <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-emerald-200">
               Simulation UI: Running
+            </span>
+          )}
+          {!state.backendUiEnabled && (
+            <span className="rounded-full bg-amber-500/20 px-3 py-1 text-amber-200">
+              Desktop UI: Disabled
             </span>
           )}
           <button
